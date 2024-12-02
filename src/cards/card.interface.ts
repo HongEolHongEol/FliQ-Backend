@@ -9,19 +9,9 @@ export interface BusinessCard {
   organization: string;
   department: string;
   position: string;
-  sns: SNS[];
+  sns: string;
   image_path: string;
-  avatar: Avatar;
+  avatar: string;
   introduction: string;
   created_at: number;
-}
-
-export interface SNS {
-  type: 0 | 1 | 2 | 3;
-  link: string;
-}
-
-export interface Avatar {
-  type: 0 | 1 | 2;
-  data?: string;
 }
