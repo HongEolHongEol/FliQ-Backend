@@ -10,8 +10,7 @@ export interface BusinessCard {
   department: string;
   position: string;
   sns: string;
-  image_path: string;
   avatar: string;
   introduction: string;
-  created_at: number;
+  created_at: Date;
 }
