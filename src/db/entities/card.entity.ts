@@ -1,7 +1,7 @@
-import { Column, Entity, PrimaryGeneratedColumn, Timestamp } from 'typeorm';
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity('business_cards')
-export class BusinessCard {
+export class BusinessCardEntity {
   @PrimaryGeneratedColumn({ type: 'int' })
   id: number;
 
@@ -36,14 +36,11 @@ export class BusinessCard {
   sns: string;
 
   @Column({ type: 'varchar', length: 255 })
-  image_path: string;
-
-  @Column({ type: 'varchar', length: 255 })
   avatar: string;
 
   @Column('text')
   introduction: string;
 
   @Column({ type: 'timestamp', nullable: true })
-  created_at?: Timestamp;
+  created_at?: Date;
 }
