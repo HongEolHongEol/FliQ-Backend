@@ -14,7 +14,7 @@ export class MysqlConfigProvider implements TypeOrmOptionsFactory {
       username: this.configService.get('DB_USERNAME'),
       password: this.configService.get('DB_PASSWORD'),
       database: this.configService.get('DB_DATABASE'),
-      timezone: 'Asia/Seoul',
+      timezone: 'Z',
       charset: 'UTF8MB4_GENERAL_CI',
       autoLoadEntities: true,
       synchronize: this.configService.get<boolean>('DB_USESYNC', false),
