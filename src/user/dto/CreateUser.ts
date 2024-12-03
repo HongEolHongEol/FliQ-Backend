@@ -12,4 +12,4 @@ export class CreateUserDto {
   password: string;
 }
 
-export type CreateUserResult = Omit<User, 'password' | 'created_at'>;
+export type CreateUserResult = Pick<User, 'id'>;

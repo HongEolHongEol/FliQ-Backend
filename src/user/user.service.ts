@@ -23,7 +23,7 @@ export class UserService {
     await this.userRepository.save(userEntity);
 
     const { id } = userEntity;
-    return { id, email };
+    return { id };
   }
 
   async getUser({ id }: GetUserDto): Promise<GetUserResult> {
@@ -36,7 +36,8 @@ export class UserService {
       return null;
     }
 
-    const { email, created_at } = userEntity;
-    return { id, email, created_at };
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...withoutPassword } = userEntity;
+    return withoutPassword as GetUserResult;
   }
 }
