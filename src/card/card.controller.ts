@@ -11,8 +11,9 @@ import { CardService } from './card.service';
 import { CreateCardDto, CreateCardResult } from './dto/CreateCard';
 import { GetCardDto, GetCardResult } from './dto/GetCard';
 import { GetAllCardsDto, GetAllCardsResult } from './dto/GetAllCards';
-import { FileInterceptor } from '@nestjs/platform-express';
 import { AwsService } from 'src/aws/aws.service';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { UploadImageDto, UploadImageResult } from './dto/UploadImage';
 
 @Controller('card')
 export class CardController {
@@ -22,14 +23,21 @@ export class CardController {
   ) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('image'))
   async create(
-    @UploadedFile() file: Express.Multer.File,
     @Body() createCardDto: CreateCardDto,
   ): Promise<CreateCardResult> {
     const result = await this.cardService.create(createCardDto);
-    await this.awsService.upload(`c${result.id}`, file);
     return result;
+  }
+
+  @Post('image')
+  @UseInterceptors(FileInterceptor('image'))
+  async uploadImage(
+    @UploadedFile() image: Express.Multer.File,
+    @Body() uploadImageDto: UploadImageDto,
+  ): Promise<UploadImageResult> {
+    await this.awsService.upload(`card/${uploadImageDto.id}.png`, image);
+    return { message: 'success' };
   }
 
   @Get(':id')
