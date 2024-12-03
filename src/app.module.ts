@@ -7,6 +7,7 @@ import { MysqlConfigProvider } from './db/mysql.provider';
 import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { CardModule } from './card/card.module';
+import { AwsModule } from './aws/aws.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { CardModule } from './card/card.module';
     UserModule,
     AuthModule,
     CardModule,
+    AwsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
