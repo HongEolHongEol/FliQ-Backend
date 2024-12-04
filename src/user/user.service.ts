@@ -29,7 +29,6 @@ export class UserService {
   async getUser({ id }: GetUserDto): Promise<GetUserResult> {
     const userEntity = await this.userRepository.findOne({
       where: { id },
-      cache: 300000, //5min
     });
 
     if (userEntity == null) {
