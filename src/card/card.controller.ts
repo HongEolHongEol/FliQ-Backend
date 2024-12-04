@@ -14,6 +14,7 @@ import { GetAllCardsDto, GetAllCardsResult } from './dto/GetAllCards';
 import { AwsService } from 'src/aws/aws.service';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UploadImageDto, UploadImageResult } from './dto/UploadImage';
+import { DeleteCardDto, DeleteCardResult } from './dto/DeleteCard';
 
 @Controller('card')
 export class CardController {
@@ -50,5 +51,15 @@ export class CardController {
     @Param() getAllCardsDto: GetAllCardsDto,
   ): Promise<GetAllCardsResult> {
     return this.cardService.getAllCards(getAllCardsDto);
+  }
+
+  @Post('delete')
+  async delete(
+    @Body() deleteCardDto: DeleteCardDto,
+  ): Promise<DeleteCardResult> {
+    const result = await this.cardService.delete(deleteCardDto);
+    await this.awsService.delete(`card/${deleteCardDto.id}.png`);
+
+    return result;
   }
 }
