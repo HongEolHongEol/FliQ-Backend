@@ -8,6 +8,7 @@ import { UserModule } from './user/user.module';
 import { AuthModule } from './auth/auth.module';
 import { CardModule } from './card/card.module';
 import { AwsModule } from './aws/aws.module';
+import { ShareModule } from './share/share.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AwsModule } from './aws/aws.module';
     AuthModule,
     CardModule,
     AwsModule,
+    ShareModule,
   ],
   controllers: [AppController],
   providers: [AppService],
