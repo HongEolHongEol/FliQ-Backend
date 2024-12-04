@@ -20,6 +20,7 @@ export class MysqlConfigProvider implements TypeOrmOptionsFactory {
       synchronize: this.configService.get<boolean>('DB_USESYNC', false),
       logging: this.configService.get<boolean>('DB_LOGGING', true),
       retryAttempts: 2,
+      cache: true,
     };
   }
 }

@@ -30,6 +30,7 @@ export class CardService {
   async getCard({ id }: GetCardDto): Promise<GetCardResult> {
     const cardEntity = await this.cardRepository.findOne({
       where: { id },
+      cache: 300000, // 5min
     });
 
     if (cardEntity == null) {
