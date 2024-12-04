@@ -5,6 +5,7 @@ import { Repository } from 'typeorm';
 import { CreateCardDto, CreateCardResult } from './dto/CreateCard';
 import { GetCardDto, GetCardResult } from './dto/GetCard';
 import { GetAllCardsDto, GetAllCardsResult } from './dto/GetAllCards';
+import { DeleteCardDto, DeleteCardResult } from './dto/DeleteCard';
 
 @Injectable()
 export class CardService {
@@ -50,5 +51,12 @@ export class CardService {
     }
 
     return cards as GetAllCardsResult;
+  }
+
+  async delete(deleteCardDto: DeleteCardDto): Promise<DeleteCardResult> {
+    const { id } = deleteCardDto;
+
+    await this.cardRepository.delete(id);
+    return { message: 'success' };
   }
 }
