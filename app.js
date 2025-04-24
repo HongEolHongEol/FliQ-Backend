@@ -1,12 +1,17 @@
-const dotenv = require('dotenv');
+import dotenv from 'dotenv';
 
-const createError = require('http-errors');
-const express = require('express');
-const cookieParser = require('cookie-parser');
-const logger = require('morgan');
+import createError from 'http-errors';
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import logger from 'morgan';
 
-const indexRouter = require('./routes/index');
-const usersRouter = require('./routes/users');
+import indexRouter from './routes/index.js';
+import MySQLPoolProvider from './db/mysql.js';
+
+import http from 'http';
+import https from 'https';
+import fs from 'fs';
+import path from 'path';
 
 const app = express();
 
@@ -22,7 +27,6 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
 app.use('/', indexRouter);
-app.use('/users', usersRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
@@ -43,11 +47,19 @@ const port = process.env.PORT || '80';
 app.set('port', port);
 
 if (process.env.NODE_ENV === 'development') {
-  const http = require('http');
+  const pool = MySQLPoolProvider.getPool();
   http.createServer(app).listen(port);
+
+  pool.getConnection((err, connection) => {
+    if (err) {
+      console.error('Error connecting to the database:', err);
+      return;
+    }
+    console.log('Connected to the database');
+    connection.release();
+  });
+
 } else {
-  const https = require('https');
-  const fs = require('fs');
   const options = {}; // TODO: https options
   https.createServer(options, app).listen(port);
 }
