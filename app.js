@@ -6,7 +6,7 @@ import cookieParser from 'cookie-parser';
 import logger from 'morgan';
 
 import indexRouter from './routes/index.js';
-import MySQLPoolProvider from './db/mysql.js';
+import MysqlPoolProvider from './db/provider.js';
 
 import http from 'http';
 import https from 'https';
@@ -47,7 +47,7 @@ const port = process.env.PORT || '80';
 app.set('port', port);
 
 if (process.env.NODE_ENV === 'development') {
-  const pool = MySQLPoolProvider.getPool();
+  const pool = MysqlPoolProvider.getPool();
   http.createServer(app).listen(port);
 
   pool.getConnection((err, connection) => {
@@ -58,7 +58,6 @@ if (process.env.NODE_ENV === 'development') {
     console.log('Connected to the database');
     connection.release();
   });
-
 } else {
   const options = {}; // TODO: https options
   https.createServer(options, app).listen(port);
