@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import AWS from 'aws-sdk';
 
 import createError from 'http-errors';
 import express from 'express';
@@ -6,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import logger from 'morgan';
 
 import indexRouter from './routes/index.js';
+import cardRouter from './routes/card.js';
 import MysqlPoolProvider from './db/provider.js';
 
 import http from 'http';
@@ -21,12 +23,35 @@ if (process.env.NODE_ENV === 'development') {
   dotenv.config({ path: '.env.production' });
 }
 
+AWS.config.update({
+  region: process.env.AWS_REGION,
+});
+
 app.use(logger('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
+app.use(() => {
+  // Mysql 연결 테스트
+  const pool = MysqlPoolProvider.getPool();
+  pool.getConnection((err, connection) => {
+    if (err) {
+      console.error('Error getting MySQL connection:', err);
+    } else {
+      console.log('MySQL connection established');
+      connection.release();
+    }
+  });
+
+  // Multer로 받은 파일 임시 저장소
+  if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
+    fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+  }
+});
+
 app.use('/', indexRouter);
+app.use('/card', cardRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
@@ -47,17 +72,7 @@ const port = process.env.PORT || '80';
 app.set('port', port);
 
 if (process.env.NODE_ENV === 'development') {
-  const pool = MysqlPoolProvider.getPool();
   http.createServer(app).listen(port);
-
-  pool.getConnection((err, connection) => {
-    if (err) {
-      console.error('Error connecting to the database:', err);
-      return;
-    }
-    console.log('Connected to the database');
-    connection.release();
-  });
 } else {
   const options = {}; // TODO: https options
   https.createServer(options, app).listen(port);

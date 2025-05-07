@@ -9,15 +9,18 @@ class CardRepository {
   async insertCard(card) {
     const connection = await this.pool.getConnection();
     try {
-      const query = `INSERT INTO Card (name, contact, email, profile_img_url, card_img_url, user_id, private) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+      const query = `INSERT INTO Card (name, contact, email, profile_img_url, card_img_url, organization, position, introduction, user_id, private) VALUES (?, ?, ?, ?, ?, ?, ?)`;
       const [result] = await connection.execute(query, [
         card.name,
         card.contact,
         card.email,
         card.profile_img_url,
         card.card_img_url,
+        card.organization,
+        card.position,
+        card.introduction,
         card.user_id,
-        card.private,
+        +card._private,
       ]);
       return result;
     } catch (err) {
@@ -28,7 +31,7 @@ class CardRepository {
     }
   }
 
-  async getOwnCards(userId) {
+  async getAllCardsByUser(userId) {
     const connection = await this.pool.getConnection();
     try {
       const query = `SELECT * FROM Card WHERE user_id = ?`;
@@ -41,4 +44,20 @@ class CardRepository {
       connection.release(); // Ensure the connection is released back to the pool
     }
   }
+
+  async getAllSharedCardsByUser(userId) {
+    const connection = await this.pool.getConnection();
+    try {
+      const query = `SELECT Card.* FROM Shared_card JOIN Card On Card.id = Shared_card.card_id WHERE Shared_card.user_id = ?`;
+      const [rows] = await connection.execute(query, [userId]);
+      return rows;
+    } catch (err) {
+      console.error('Error executing query:', err);
+      throw err; // Rethrow the error for handling in the calling function
+    } finally {
+      connection.release(); // Ensure the connection is released back to the pool
+    }
+  }
 }
+
+export default CardRepository;
