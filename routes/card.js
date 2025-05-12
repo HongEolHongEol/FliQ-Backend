@@ -1,15 +1,15 @@
 import { Router } from 'express';
-import CardRepository from '../db/card/CardRepository';
-import MysqlPoolProvider from '../db/provider';
+import CardRepository from '../db/card/CardRepository.js';
+import MysqlPoolProvider from '../db/provider.js';
 import Multer from 'multer';
 import multerS3 from 'multer-s3';
-import { S3 } from 'aws-sdk';
+import AWS from 'aws-sdk';
 
 const router = Router();
 const multer = Multer({
   storage: multerS3({
-    s3: new S3(),
-    bucket: process.env.AWS_S3_BUCKET_NAME,
+    s3: new AWS.S3(),
+    bucket: () => process.env.S3_BUCKET_NAME,
     acl: 'public-read',
     contentType: multerS3.AUTO_CONTENT_TYPE,
     key: (req, file, cb) => {
@@ -25,7 +25,6 @@ router.post('/upload', async (req, res) => {
     name,
     contact,
     email,
-    card_img_url,
     organization,
     position,
     introduction,
@@ -38,8 +37,6 @@ router.post('/upload', async (req, res) => {
       name,
       contact,
       email,
-      profile_img_url,
-      card_img_url,
       organization,
       position,
       introduction,

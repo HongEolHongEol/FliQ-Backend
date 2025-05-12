@@ -9,13 +9,11 @@ class CardRepository {
   async insertCard(card) {
     const connection = await this.pool.getConnection();
     try {
-      const query = `INSERT INTO Card (name, contact, email, profile_img_url, card_img_url, organization, position, introduction, user_id, private) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+      const query = `INSERT INTO Card (name, contact, email, organization, position, introduction, user_id, private) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
       const [result] = await connection.execute(query, [
         card.name,
         card.contact,
         card.email,
-        card.profile_img_url,
-        card.card_img_url,
         card.organization,
         card.position,
         card.introduction,
