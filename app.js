@@ -68,7 +68,7 @@ app.use(function (err, req, res, next) {
   res.status(err.status || 500);
 });
 
-const port = process.env.PORT || '80';
+const port = 3000;
 app.set('port', port);
 
 if (process.env.NODE_ENV === 'development') {
