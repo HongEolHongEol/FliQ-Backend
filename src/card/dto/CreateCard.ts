@@ -14,7 +14,7 @@ export class CreateCardDto {
 
   @IsString()
   @IsPhoneNumber('KR')
-  phone: string;
+  contact: string;
 
   @IsEmail()
   email: string;
