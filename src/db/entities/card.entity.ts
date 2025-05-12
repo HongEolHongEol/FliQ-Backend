@@ -5,42 +5,27 @@ export class BusinessCardEntity {
   @PrimaryGeneratedColumn({ type: 'int' })
   id: number;
 
-  @Column({ type: 'int' })
-  owner: number;
-
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'varchar', length: 100 })
   name: string;
 
-  @Column({ type: 'varchar', length: 255 })
-  title: string;
+  @Column({ type: 'varchar', length: 100 })
+  contact: string;
 
-  @Column({ type: 'varchar', length: 20 })
-  phone: string;
-
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'varchar', length: 100 })
   email: string;
 
-  @Column({ type: 'varchar', length: 255 })
-  address: string;
-
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'varchar', length: 100 })
   organization: string;
 
-  @Column({ type: 'varchar', length: 255 })
-  department: string;
-
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'varchar', length: 100 })
   position: string;
 
-  @Column({ type: 'varchar', length: 255 })
-  sns: string;
-
-  @Column({ type: 'varchar', length: 255 })
-  avatar: string;
-
-  @Column('text')
+  @Column({ type: 'varchar', length: 500 })
   introduction: string;
 
-  @Column({ type: 'timestamp', nullable: true })
-  created_at?: Date;
+  @Column({ type: 'int' })
+  user_id: number;
+
+  @Column({ type: 'tinyint', width: 1 })
+  private: boolean;
 }

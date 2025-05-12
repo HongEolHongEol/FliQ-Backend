@@ -4,7 +4,7 @@ import { BusinessCard } from '../card.interface';
 export class GetAllCardsDto {
   @IsInt()
   @IsPositive()
-  owner: number;
+  user_id: number;
 }
 
 export type GetAllCardsResult = BusinessCard[];

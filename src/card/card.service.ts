@@ -40,22 +40,20 @@ export class CardService {
     return cardEntity as GetCardResult;
   }
 
-  async getAllCards({ owner }: GetAllCardsDto): Promise<GetAllCardsResult> {
+  async getAllCards({ user_id }: GetAllCardsDto): Promise<GetAllCardsResult> {
     const cards = await this.cardRepository.find({
-      where: { owner },
+      where: { user_id },
     });
 
     if (cards == null) {
-      this.logger.error(`Card List by owner(${owner}) do not exist!`);
+      this.logger.error(`Card List by owner(${user_id}) do not exist!`);
       return null;
     }
 
     return cards as GetAllCardsResult;
   }
 
-  async delete(deleteCardDto: DeleteCardDto): Promise<DeleteCardResult> {
-    const { id } = deleteCardDto;
-
+  async delete({ id }: DeleteCardDto): Promise<DeleteCardResult> {
     await this.cardRepository.delete(id);
     return { message: 'success' };
   }
