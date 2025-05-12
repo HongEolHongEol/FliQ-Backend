@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEmail,
   IsInt,
   IsPhoneNumber,
@@ -8,15 +9,8 @@ import {
 import { BusinessCard } from '../card.interface';
 
 export class CreateCardDto {
-  @IsInt()
-  @IsPositive()
-  owner: number;
-
   @IsString()
   name: string;
-
-  @IsString()
-  title: string;
 
   @IsString()
   @IsPhoneNumber('KR')
@@ -26,25 +20,20 @@ export class CreateCardDto {
   email: string;
 
   @IsString()
-  address: string;
-
-  @IsString()
   organization: string;
-
-  @IsString()
-  department: string;
 
   @IsString()
   position: string;
 
   @IsString()
-  sns: string;
-
-  @IsString()
-  avatar: string;
-
-  @IsString()
   introduction: string;
+
+  @IsInt()
+  @IsPositive()
+  user_id: number;
+
+  @IsBoolean()
+  private: boolean;
 }
 
 export type CreateCardResult = Pick<BusinessCard, 'id'>;
