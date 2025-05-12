@@ -9,11 +9,10 @@ class UserRepository {
   async insertUser(user) {
     const connection = await this.pool.getConnection();
     try {
-      const query = `INSERT INTO User (name, email, password, profile_img_url) VALUES (?, ?, ?, ?)`;
+      const query = `INSERT INTO User (name, email, profile_img_url) VALUES (?, ?, ?)`;
       const [result] = await connection.execute(query, [
         user.name,
         user.email,
-        user.password,
         user.profile_img_url,
       ]);
       return result;
