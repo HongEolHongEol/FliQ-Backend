@@ -7,4 +7,4 @@ export class GetUserDto {
   id: number;
 }
 
-export type GetUserResult = Omit<User, 'password'>;
+export type GetUserResult = User;

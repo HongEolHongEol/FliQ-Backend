@@ -14,10 +14,9 @@ export class UserService {
     private readonly userRepository: Repository<UserEntity>,
   ) {}
 
-  async create({ email, password }: CreateUserDto): Promise<CreateUserResult> {
+  async create(createUserDto: CreateUserDto): Promise<CreateUserResult> {
     const userEntity = this.userRepository.create({
-      email,
-      password,
+      ...createUserDto,
     });
 
     await this.userRepository.save(userEntity);
@@ -36,8 +35,6 @@ export class UserService {
       return null;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...withoutPassword } = userEntity;
-    return withoutPassword as GetUserResult;
+    return userEntity as GetUserResult;
   }
 }
