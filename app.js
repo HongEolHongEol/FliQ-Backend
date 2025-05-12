@@ -8,6 +8,7 @@ import logger from 'morgan';
 
 import indexRouter from './routes/index.js';
 import cardRouter from './routes/card.js';
+import userRouter from './routes/user.js';
 import MysqlPoolProvider from './db/provider.js';
 
 import http from 'http';
@@ -52,6 +53,7 @@ app.use(() => {
 
 app.use('/', indexRouter);
 app.use('/card', cardRouter);
+app.use('/user', userRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
