@@ -15,8 +15,13 @@ import http from 'http';
 import https from 'https';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
+
+// ES 모듈에서 __dirname 사용하기 위한 설정
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 if (process.env.NODE_ENV === 'development') {
   dotenv.config({ path: '.env.development' });
@@ -33,24 +38,33 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
-app.use(() => {
-  // Mysql 연결 테스트
-  const pool = MysqlPoolProvider.getPool();
-  pool.getConnection((err, connection) => {
-    if (err) {
-      console.error('Error getting MySQL connection:', err);
-    } else {
-      console.log('MySQL connection established');
-      connection.release();
-    }
-  });
-
-  // Multer로 받은 파일 임시 저장소
-  if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
-    fs.mkdirSync(path.join(__dirname, 'uploads'), { recursive: true });
+// 수정된 미들웨어 - next()를 호출해야 다음 미들웨어로 넘어갑니다
+app.use((req, res, next) => {
+  // MySQL 연결 테스트 (한 번만 실행하도록 개선)
+  if (!app.locals.mysqlTested) {
+    const pool = MysqlPoolProvider.getPool();
+    pool.getConnection((err, connection) => {
+      if (err) {
+        console.error('Error getting MySQL connection:', err);
+      } else {
+        console.log('MySQL connection established');
+        connection.release();
+      }
+    });
+    app.locals.mysqlTested = true;
   }
+
+  // Multer로 받은 파일 임시 저장소 생성
+  const uploadsDir = path.join(__dirname, 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
+
+  // 중요: next()를 호출해야 다음 미들웨어/라우터로 진행됩니다
+  next();
 });
 
+// 라우터 등록
 app.use('/', indexRouter);
 app.use('/card', cardRouter);
 app.use('/user', userRouter);
@@ -68,14 +82,24 @@ app.use(function (err, req, res, next) {
 
   // render the error page
   res.status(err.status || 500);
+  res.json({ 
+    error: res.locals.message,
+    status: err.status || 500
+  });
 });
 
-const port = 3000;
+const port = process.env.PORT || 3000;
 app.set('port', port);
 
 if (process.env.NODE_ENV === 'development') {
-  http.createServer(app).listen(port);
+  const server = http.createServer(app);
+  server.listen(port, () => {
+    console.log(`Development server running on http://localhost:${port}`);
+  });
 } else {
   const options = {}; // TODO: https options
-  https.createServer(options, app).listen(port);
+  const server = https.createServer(options, app);
+  server.listen(port, () => {
+    console.log(`Production server running on https://localhost:${port}`);
+  });
 }
