@@ -9,6 +9,8 @@ import logger from 'morgan';
 import indexRouter from './routes/index.js';
 import cardRouter from './routes/card.js';
 import userRouter from './routes/user.js';
+import tagRouter from './routes/tag.js';
+import fileRouter from './routes/file.js';
 import MysqlPoolProvider from './db/provider.js';
 
 import http from 'http';
@@ -19,7 +21,6 @@ import { fileURLToPath } from 'url';
 
 const app = express();
 
-// ES 모듈에서 __dirname 사용하기 위한 설정
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -38,9 +39,20 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
-// 수정된 미들웨어 - next()를 호출해야 다음 미들웨어로 넘어갑니다
+// CORS 설정 추가
 app.use((req, res, next) => {
-  // MySQL 연결 테스트 (한 번만 실행하도록 개선)
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
+app.use((req, res, next) => {
   if (!app.locals.mysqlTested) {
     const pool = MysqlPoolProvider.getPool();
     pool.getConnection((err, connection) => {
@@ -54,20 +66,20 @@ app.use((req, res, next) => {
     app.locals.mysqlTested = true;
   }
 
-  // Multer로 받은 파일 임시 저장소 생성
   const uploadsDir = path.join(__dirname, 'uploads');
   if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  // 중요: next()를 호출해야 다음 미들웨어/라우터로 진행됩니다
   next();
 });
 
-// 라우터 등록
+// 라우터 설정
 app.use('/', indexRouter);
 app.use('/card', cardRouter);
 app.use('/user', userRouter);
+app.use('/tag', tagRouter);
+app.use('/file', fileRouter);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
@@ -76,11 +88,9 @@ app.use(function (req, res, next) {
 
 // error handler
 app.use(function (err, req, res, next) {
-  // set locals, only providing error in development
   res.locals.message = err.message;
   res.locals.error = req.app.get('env') === 'development' ? err : {};
 
-  // render the error page
   res.status(err.status || 500);
   res.json({ 
     error: res.locals.message,
@@ -91,15 +101,17 @@ app.use(function (err, req, res, next) {
 const port = process.env.PORT || 3000;
 app.set('port', port);
 
-if (process.env.NODE_ENV === 'development') {
-  const server = http.createServer(app);
-  server.listen(port, () => {
-    console.log(`Development server running on http://localhost:${port}`);
-  });
-} else {
-  const options = {}; // TODO: https options
-  const server = https.createServer(options, app);
-  server.listen(port, () => {
-    console.log(`Production server running on https://localhost:${port}`);
-  });
-}
+const server = http.createServer(app);
+server.listen(port, () => {
+  console.log(`Development server running on http://localhost:${port}`);
+});
+
+// HTTPS 설정 (SSL 인증서 필요)
+// Uncomment the following lines to enable HTTPS in production
+// const options = {}; // TODO: https options
+//   const server = https.createServer(options, app);
+//   server.listen(port, () => {
+//     console.log(`Production server running on https://localhost:${port}`);
+//   });
+
+export default app;

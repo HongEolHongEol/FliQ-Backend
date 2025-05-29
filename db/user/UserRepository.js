@@ -1,7 +1,4 @@
 class UserRepository {
-  /**
-   * @param {import('mysql2/promise').Pool} pool
-   */
   constructor(pool) {
     this.pool = pool;
   }
@@ -9,18 +6,21 @@ class UserRepository {
   async insertUser(user) {
     const connection = await this.pool.getConnection();
     try {
-      const query = `INSERT INTO User (name, email, profile_img_url) VALUES (?, ?, ?)`;
+      const query = `
+        INSERT INTO User (name, email, profile_img_url) 
+        VALUES (?, ?, ?)
+      `;
       const [result] = await connection.execute(query, [
         user.name,
         user.email,
         user.profile_img_url,
       ]);
-      return result;
+      return { id: result.insertId, ...result };
     } catch (err) {
       console.error('Error executing query:', err);
-      throw err; // Rethrow the error for handling in the calling function
+      throw err;
     } finally {
-      connection.release(); // Ensure the connection is released back to the pool
+      connection.release();
     }
   }
 
@@ -29,12 +29,26 @@ class UserRepository {
     try {
       const query = `SELECT * FROM User WHERE id = ?`;
       const [rows] = await connection.execute(query, [userId]);
-      return rows[0]; // Return the first user found
+      return rows[0];
     } catch (err) {
       console.error('Error executing query:', err);
-      throw err; // Rethrow the error for handling in the calling function
+      throw err;
     } finally {
-      connection.release(); // Ensure the connection is released back to the pool
+      connection.release();
+    }
+  }
+
+  async getUserByEmail(email) {
+    const connection = await this.pool.getConnection();
+    try {
+      const query = `SELECT * FROM User WHERE email = ?`;
+      const [rows] = await connection.execute(query, [email]);
+      return rows[0];
+    } catch (err) {
+      console.error('Error executing query:', err);
+      throw err;
+    } finally {
+      connection.release();
     }
   }
 
@@ -46,9 +60,9 @@ class UserRepository {
       return result;
     } catch (err) {
       console.error('Error executing query:', err);
-      throw err; // Rethrow the error for handling in the calling function
+      throw err;
     } finally {
-      connection.release(); // Ensure the connection is released back to the pool
+      connection.release();
     }
   }
 }
