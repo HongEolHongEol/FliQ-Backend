@@ -8,6 +8,8 @@ import MysqlPoolProvider from '../db/provider.js';
 import Multer from 'multer';
 import multerS3 from 'multer-s3';
 import AWS from 'aws-sdk';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const router = Router();
 const s3 = new AWS.S3();

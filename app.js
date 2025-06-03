@@ -102,8 +102,12 @@ const port = process.env.PORT || 3000;
 app.set('port', port);
 
 const server = http.createServer(app);
-server.listen(port, '0.0.0.0', () => {
-  console.log(`Server running on port ${port}`);
+// server.listen(port, '0.0.0.0', () => {
+//   console.log(`Server running on port ${port}`);
+// });
+
+server.listen(port, () => {
+  console.log(`Server running on local: http://localhost:${port}`);
 });
 
 // HTTPS 설정 (SSL 인증서 필요)
