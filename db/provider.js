@@ -13,7 +13,6 @@ class MysqlPoolProvider {
         port: process.env.DB_PORT || 3306,
         connectionLimit: 10,
         // MySQL2에서 유효한 옵션들로 변경
-        acquireTimeout: 60000,
         connectTimeout: 60000,
         // reconnect 옵션 제거 (MySQL2에서 지원하지 않음)
         queueLimit: 0,

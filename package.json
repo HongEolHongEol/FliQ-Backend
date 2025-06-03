@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "start": "node ./app.js",
+    "start": "NODE_ENV=development node ./app.js",
     "start:prod": "pm2 start ./app.js"
   },
   "dependencies": {
