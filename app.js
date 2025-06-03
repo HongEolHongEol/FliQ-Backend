@@ -6,11 +6,6 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import logger from 'morgan';
 
-import indexRouter from './routes/index.js';
-import cardRouter from './routes/card.js';
-import userRouter from './routes/user.js';
-import tagRouter from './routes/tag.js';
-import fileRouter from './routes/file.js';
 import MysqlPoolProvider from './db/provider.js';
 
 import http from 'http';
@@ -59,8 +54,6 @@ app.use((req, res, next) => {
 });
 
 // MySQL 연결 테스트 및 초기화 미들웨어
-app.use(async (req, res, next) => {
-  if (!app.locals.mysqlTested) {
     try {
       const pool = MysqlPoolProvider.getPool();
       const connection = await pool.getConnection();
@@ -71,7 +64,6 @@ app.use(async (req, res, next) => {
       console.error('Error establishing MySQL connection:', err);
       // 연결 실패해도 서버는 계속 실행되도록 함
     }
-  }
 
   // uploads 디렉토리 생성 (로컬 테스트용)
   const uploadsDir = path.join(__dirname, 'uploads');
@@ -79,15 +71,12 @@ app.use(async (req, res, next) => {
     fs.mkdirSync(uploadsDir, { recursive: true });
   }
 
-  next();
-});
-
 // 라우터 설정
-app.use('/', indexRouter);
-app.use('/card', cardRouter);
-app.use('/user', userRouter);
-app.use('/tag', tagRouter);
-app.use('/file', fileRouter);
+app.use('/', (await import('./routes/index.js')).default);
+app.use('/card', (await import('./routes/card.js')).default);
+app.use('/user', (await import('./routes/user.js')).default);
+app.use('/tag', (await import('./routes/tag.js')).default);
+app.use('/file', (await import('./routes/file.js')).default);
 
 // 404 에러 핸들러
 app.use(function (req, res, next) {
@@ -149,24 +138,5 @@ process.on('SIGINT', async () => {
     process.exit(0);
   });
 });
-
-// HTTPS 설정 (프로덕션 환경에서 필요시 사용)
-if (process.env.NODE_ENV === 'production' && process.env.SSL_CERT_PATH && process.env.SSL_KEY_PATH) {
-  try {
-    const options = {
-      key: fs.readFileSync(process.env.SSL_KEY_PATH),
-      cert: fs.readFileSync(process.env.SSL_CERT_PATH)
-    };
-    
-    const httpsServer = https.createServer(options, app);
-    const httpsPort = process.env.HTTPS_PORT || 443;
-    
-    httpsServer.listen(httpsPort, () => {
-      console.log(`HTTPS server running on https://localhost:${httpsPort}`);
-    });
-  } catch (err) {
-    console.error('Failed to start HTTPS server:', err);
-  }
-}
 
 export default app;
