@@ -1,5 +1,3 @@
-
-// === 수정된 provider.js (변경사항 없음, 하지만 개선사항 추가) ===
 import { createPool } from 'mysql2/promise';
 
 class MysqlPoolProvider {
@@ -13,10 +11,12 @@ class MysqlPoolProvider {
         password: process.env.DB_PASSWORD,
         database: process.env.DB_NAME,
         port: process.env.DB_PORT || 3306,
-        connectionLimit: 10, // 4에서 10으로 증가
+        connectionLimit: 10,
+        // MySQL2에서 유효한 옵션들로 변경
         acquireTimeout: 60000,
-        timeout: 60000,
-        reconnect: true,
+        connectTimeout: 60000,
+        // reconnect 옵션 제거 (MySQL2에서 지원하지 않음)
+        queueLimit: 0,
       });
     }
     return this.pool;

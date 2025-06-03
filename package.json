@@ -7,7 +7,8 @@
     "start:prod": "pm2 start ./app.js"
   },
   "dependencies": {
-    "aws-sdk": "^2.1692.0",
+    "@aws-sdk/client-s3": "^3.658.1",
+    "@aws-sdk/lib-storage": "^3.658.1",
     "cookie-parser": "~1.4.4",
     "debug": "~2.6.9",
     "dotenv": "^16.5.0",
@@ -15,8 +16,8 @@
     "http-errors": "~1.6.3",
     "morgan": "~1.9.1",
     "multer": "^1.4.5-lts.2",
-    "multer-s3": "^2.10.0",
-    "mysql2": "^3.14.0"
+    "mysql2": "^3.14.0",
+    "uuid": "^10.0.0"
   },
   "type": "module",
   "devDependencies": {

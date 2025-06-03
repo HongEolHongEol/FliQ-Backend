@@ -1,33 +1,70 @@
 import { Router } from 'express';
-import Multer from 'multer';
-import multerS3 from 'multer-s3';
-import AWS from 'aws-sdk';
+import multer from 'multer';
+import { S3Client, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
+import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
+
 dotenv.config();
 
 const router = Router();
-const s3 = new AWS.S3();
 
-const multer = Multer({
-  storage: multerS3({
-    s3: s3,
-    bucket: process.env.S3_BUCKET_NAME,
-    acl: 'public-read',
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (req, file, cb) => {
-      const timestamp = Date.now();
-      const ext = file.originalname.split('.').pop();
-      const folder = req.body.folder || 'general';
-      cb(null, `${folder}/${timestamp}.${ext}`);
-    },
-  }),
-  limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB 제한
+// AWS S3 클라이언트 설정
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
 });
 
+// Multer 메모리 스토리지 설정
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB 제한
+  },
+  fileFilter: (req, file, cb) => {
+    // 파일 타입 검증
+    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf', 'text/plain'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type'), false);
+    }
+  },
+});
+
+// S3 업로드 함수
+async function uploadToS3(file, folder = 'general') {
+  const timestamp = Date.now();
+  const ext = file.originalname.split('.').pop();
+  const key = `${folder}/${timestamp}-${uuidv4()}.${ext}`;
+
+  const uploadParams = {
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: key,
+    Body: file.buffer,
+    ContentType: file.mimetype,
+    ACL: 'public-read',
+  };
+
+  const upload = new Upload({
+    client: s3Client,
+    params: uploadParams,
+  });
+
+  const result = await upload.done();
+  return {
+    location: result.Location,
+    key: key,
+    bucket: process.env.S3_BUCKET_NAME,
+  };
+}
+
 // 단일 파일 업로드
-router.post('/upload', multer.single('file'), async (req, res) => {
+router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
     const { description, folder } = req.body;
@@ -36,9 +73,12 @@ router.post('/upload', multer.single('file'), async (req, res) => {
       return res.status(400).json({ error: 'No file uploaded' });
     }
 
+    const uploadResult = await uploadToS3(file, folder);
+
+    // Create file metadata object with all relevant information
     const fileData = {
       filename: file.originalname,
-      url: file.location,
+      url: uploadResult.location,
       size: file.size,
       mimetype: file.mimetype,
       folder: folder || 'general',
@@ -61,7 +101,7 @@ router.post('/upload', multer.single('file'), async (req, res) => {
 });
 
 // 다중 파일 업로드
-router.post('/upload-multiple', multer.array('files', 5), async (req, res) => {
+router.post('/upload-multiple', upload.array('files', 5), async (req, res) => {
   try {
     const files = req.files;
     const { folder } = req.body;
@@ -70,9 +110,14 @@ router.post('/upload-multiple', multer.array('files', 5), async (req, res) => {
       return res.status(400).json({ error: 'No files uploaded' });
     }
 
-    const filesData = files.map(file => ({
+    // 모든 파일을 S3에 업로드
+    const uploadPromises = files.map(file => uploadToS3(file, folder));
+    const uploadResults = await Promise.all(uploadPromises);
+
+    // Map each file to create consistent metadata structure
+    const filesData = files.map((file, index) => ({
       filename: file.originalname,
-      url: file.location,
+      url: uploadResults[index].location,
       size: file.size,
       mimetype: file.mimetype,
       folder: folder || 'general',
@@ -94,7 +139,7 @@ router.post('/upload-multiple', multer.array('files', 5), async (req, res) => {
 });
 
 // 이미지 전용 업로드 (최적화된 설정)
-router.post('/upload-image', multer.single('image'), async (req, res) => {
+router.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
     const file = req.file;
     const { alt_text, folder } = req.body;
@@ -103,14 +148,17 @@ router.post('/upload-image', multer.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'No image uploaded' });
     }
 
-    // 이미지 파일 타입 체크
+    // Validate that uploaded file is actually an image
     if (!file.mimetype.startsWith('image/')) {
       return res.status(400).json({ error: 'Only image files are allowed' });
     }
 
+    const uploadResult = await uploadToS3(file, folder || 'images');
+
+    // Create image-specific metadata with alt text for accessibility
     const imageData = {
       filename: file.originalname,
-      url: file.location,
+      url: uploadResult.location,
       size: file.size,
       mimetype: file.mimetype,
       folder: folder || 'images',
@@ -141,16 +189,16 @@ router.delete('/delete', async (req, res) => {
       return res.status(400).json({ error: 'File URL is required' });
     }
 
-    // URL에서 S3 키 추출
+    // Extract the S3 object key from the full URL
     const url = new URL(fileUrl);
-    const key = url.pathname.substring(1); // 첫 번째 '/' 제거
+    const key = url.pathname.substring(1); // Remove the leading '/'
 
-    const deleteParams = {
+    const deleteCommand = new DeleteObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key: key
-    };
+    });
 
-    await s3.deleteObject(deleteParams).promise();
+    await s3Client.send(deleteCommand);
 
     res.status(200).json({ 
       success: true,
@@ -174,17 +222,18 @@ router.get('/info', async (req, res) => {
       return res.status(400).json({ error: 'File URL is required' });
     }
 
-    // URL에서 S3 키 추출
+    // Extract S3 key from URL for metadata lookup
     const url = new URL(fileUrl);
     const key = url.pathname.substring(1);
 
-    const headParams = {
+    const headCommand = new HeadObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
       Key: key
-    };
+    });
 
-    const data = await s3.headObject(headParams).promise();
+    const data = await s3Client.send(headCommand);
 
+    // Return relevant file information
     const fileInfo = {
       size: data.ContentLength,
       mimetype: data.ContentType,
@@ -197,7 +246,8 @@ router.get('/info', async (req, res) => {
       data: fileInfo
     });
   } catch (error) {
-    if (error.code === 'NotFound') {
+    // Handle specific case where file doesn't exist
+    if (error.name === 'NotFound') {
       return res.status(404).json({ 
         error: 'File not found' 
       });

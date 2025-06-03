@@ -5,32 +5,68 @@ import SnsRepository from '../db/sns/SnsRepository.js';
 import TagRepository from '../db/tag/TagRepository.js';
 import SharedCardRepository from '../db/shared/SharedCardRepository.js';
 import MysqlPoolProvider from '../db/provider.js';
-import Multer from 'multer';
-import multerS3 from 'multer-s3';
-import AWS from 'aws-sdk';
+import multer from 'multer';
+import { S3Client } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
+import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
+
 dotenv.config();
 
 const router = Router();
-const s3 = new AWS.S3();
 
-const multer = Multer({
-  storage: multerS3({
-    s3: s3,
-    bucket: process.env.S3_BUCKET_NAME,
-    acl: 'public-read',
-    contentType: multerS3.AUTO_CONTENT_TYPE,
-    key: (req, file, cb) => {
-      const timestamp = Date.now();
-      const ext = file.originalname.split('.').pop();
-      const folder = file.fieldname === 'profile_image' ? 'profile' : 'card';
-      cb(null, `${folder}/${req.body.id || timestamp}.${ext}`);
-    },
-  }),
+// AWS S3 클라이언트 설정
+const s3Client = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  },
+});
+
+// Multer 메모리 스토리지 설정
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB 제한
   },
+  fileFilter: (req, file, cb) => {
+    // 이미지 파일만 허용
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  },
 });
+
+// S3 업로드 함수
+async function uploadImageToS3(file, folder = 'card', id = null) {
+  const timestamp = Date.now();
+  const ext = file.originalname.split('.').pop();
+  const key = `${folder}/${id || timestamp}-${uuidv4()}.${ext}`;
+
+  const uploadParams = {
+    Bucket: process.env.S3_BUCKET_NAME,
+    Key: key,
+    Body: file.buffer,
+    ContentType: file.mimetype,
+    ACL: 'public-read',
+  };
+
+  const uploadInstance = new Upload({
+    client: s3Client,
+    params: uploadParams,
+  });
+
+  const result = await uploadInstance.done();
+  return {
+    location: result.Location,
+    key: key,
+    bucket: process.env.S3_BUCKET_NAME,
+  };
+}
 
 const cardRepository = new CardRepository(MysqlPoolProvider.getPool());
 const questionRepository = new QuestionRepository(MysqlPoolProvider.getPool());
@@ -499,7 +535,7 @@ router.get('/shared-link/:shareToken', async (req, res) => {
 });
 
 // 이미지 업로드 (프로필, 명함 사진)
-router.post('/upload-image', multer.fields([
+router.post('/upload-image', upload.fields([
   { name: 'profile_image', maxCount: 1 },
   { name: 'card_image', maxCount: 1 }
 ]), async (req, res) => {
@@ -512,11 +548,13 @@ router.post('/upload-image', multer.fields([
     const result = {};
     
     if (files.profile_image) {
-      result.profile_image_url = files.profile_image[0].location;
+      const uploadResult = await uploadImageToS3(files.profile_image[0], 'profile', req.body.id);
+      result.profile_image_url = uploadResult.location;
     }
     
     if (files.card_image) {
-      result.card_image_url = files.card_image[0].location;
+      const uploadResult = await uploadImageToS3(files.card_image[0], 'card', req.body.id);
+      result.card_image_url = uploadResult.location;
     }
 
     res.status(200).json({ 
