@@ -9,9 +9,6 @@ import multer from 'multer';
 import { S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { v4 as uuidv4 } from 'uuid';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const router = Router();
 
@@ -55,10 +52,7 @@ async function uploadImageToS3(file, folder = 'card', id = null) {
     ACL: 'public-read',
   };
 
-  const uploadInstance = new Upload({
-    client: s3Client,
-    params: uploadParams,
-  });
+  const uploadInstance = new Upload({ client: s3Client, params: uploadParams });
 
   const result = await uploadInstance.done();
   return {
@@ -72,7 +66,9 @@ const cardRepository = new CardRepository(MysqlPoolProvider.getPool());
 const questionRepository = new QuestionRepository(MysqlPoolProvider.getPool());
 const snsRepository = new SnsRepository(MysqlPoolProvider.getPool());
 const tagRepository = new TagRepository(MysqlPoolProvider.getPool());
-const sharedCardRepository = new SharedCardRepository(MysqlPoolProvider.getPool());
+const sharedCardRepository = new SharedCardRepository(
+  MysqlPoolProvider.getPool()
+);
 
 // 카드 정보 업로드 (생성)
 router.post('/upload', async (req, res) => {
@@ -93,9 +89,9 @@ router.post('/upload', async (req, res) => {
   } = req.body;
 
   if (!name || !user_id) {
-    return res.status(400).json({ 
-      error: 'Name and user_id are required fields' 
-    });
+    return res
+      .status(400)
+      .json({ error: 'Name and user_id are required fields' });
   }
 
   const connection = await MysqlPoolProvider.getPool().getConnection();
@@ -149,25 +145,28 @@ router.post('/upload', async (req, res) => {
       for (const tagName of tags) {
         if (tagName.trim()) {
           const tagResult = await tagRepository.insertTag(tagName.trim());
-          const tagId = tagResult.insertId || (await tagRepository.getTagByName(tagName.trim())).id;
+          const tagId =
+            tagResult.insertId ||
+            (await tagRepository.getTagByName(tagName.trim())).id;
           await tagRepository.addCardTag(cardId, tagId);
         }
       }
     }
 
     await connection.commit();
-    res.status(201).json({ 
-      success: true, 
-      data: { ...cardResult, id: cardId },
-      message: 'Card created successfully'
-    });
+    res
+      .status(201)
+      .json({
+        success: true,
+        data: { ...cardResult, id: cardId },
+        message: 'Card created successfully',
+      });
   } catch (error) {
     await connection.rollback();
     console.error('Error inserting card:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   } finally {
     connection.release();
   }
@@ -192,9 +191,7 @@ router.put('/:cardId', async (req, res) => {
   } = req.body;
 
   if (!name) {
-    return res.status(400).json({ 
-      error: 'Name is required' 
-    });
+    return res.status(400).json({ error: 'Name is required' });
   }
 
   const connection = await MysqlPoolProvider.getPool().getConnection();
@@ -249,24 +246,24 @@ router.put('/:cardId', async (req, res) => {
       for (const tagName of tags) {
         if (tagName.trim()) {
           const tagResult = await tagRepository.insertTag(tagName.trim());
-          const tagId = tagResult.insertId || (await tagRepository.getTagByName(tagName.trim())).id;
+          const tagId =
+            tagResult.insertId ||
+            (await tagRepository.getTagByName(tagName.trim())).id;
           await tagRepository.addCardTag(cardId, tagId);
         }
       }
     }
 
     await connection.commit();
-    res.status(200).json({ 
-      success: true, 
-      message: 'Card updated successfully'
-    });
+    res
+      .status(200)
+      .json({ success: true, message: 'Card updated successfully' });
   } catch (error) {
     await connection.rollback();
     console.error('Error updating card:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   } finally {
     connection.release();
   }
@@ -284,28 +281,24 @@ router.delete('/:cardId', async (req, res) => {
     await questionRepository.deleteQuestionsByCardId(cardId);
     await snsRepository.deleteSnsByCardId(cardId);
     await tagRepository.removeAllCardTags(cardId);
-    
+
     const result = await cardRepository.deleteCard(cardId);
 
     if (result.affectedRows === 0) {
       await connection.rollback();
-      return res.status(404).json({ 
-        error: 'Card not found' 
-      });
+      return res.status(404).json({ error: 'Card not found' });
     }
 
     await connection.commit();
-    res.status(200).json({ 
-      success: true, 
-      message: 'Card deleted successfully' 
-    });
+    res
+      .status(200)
+      .json({ success: true, message: 'Card deleted successfully' });
   } catch (error) {
     await connection.rollback();
     console.error('Error deleting card:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   } finally {
     connection.release();
   }
@@ -315,33 +308,24 @@ router.delete('/:cardId', async (req, res) => {
 router.get('/:cardId', async (req, res) => {
   try {
     const cardId = parseInt(req.params.cardId);
-    
+
     const card = await cardRepository.getCardById(cardId);
     if (!card) {
-      return res.status(404).json({ 
-        error: 'Card not found' 
-      });
+      return res.status(404).json({ error: 'Card not found' });
     }
 
     const questions = await questionRepository.getQuestionsByCardId(cardId);
     const sns_links = await snsRepository.getSnsByCardId(cardId);
     const tags = await tagRepository.getTagsByCard(cardId);
 
-    res.status(200).json({ 
-      success: true, 
-      data: {
-        ...card,
-        questions,
-        sns_links,
-        tags,
-      }
-    });
+    res
+      .status(200)
+      .json({ success: true, data: { ...card, questions, sns_links, tags } });
   } catch (error) {
     console.error('Error fetching card:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -350,33 +334,26 @@ router.get('/user/:userId', async (req, res) => {
   try {
     const userId = parseInt(req.params.userId);
     const cards = await cardRepository.getAllCardsByUser(userId);
-    
+
     // 각 카드에 대한 추가 정보 조회
     const cardsWithDetails = await Promise.all(
       cards.map(async (card) => {
-        const questions = await questionRepository.getQuestionsByCardId(card.id);
+        const questions = await questionRepository.getQuestionsByCardId(
+          card.id
+        );
         const sns_links = await snsRepository.getSnsByCardId(card.id);
         const tags = await tagRepository.getTagsByCard(card.id);
-        
-        return {
-          ...card,
-          questions,
-          sns_links,
-          tags,
-        };
+
+        return { ...card, questions, sns_links, tags };
       })
     );
 
-    res.status(200).json({ 
-      success: true, 
-      data: cardsWithDetails 
-    });
+    res.status(200).json({ success: true, data: cardsWithDetails });
   } catch (error) {
     console.error('Error fetching cards:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -385,33 +362,26 @@ router.get('/shared/:userId', async (req, res) => {
   try {
     const userId = parseInt(req.params.userId);
     const cards = await sharedCardRepository.getSharedCardsByUser(userId);
-    
+
     // 각 카드에 대한 추가 정보 조회
     const cardsWithDetails = await Promise.all(
       cards.map(async (card) => {
-        const questions = await questionRepository.getQuestionsByCardId(card.id);
+        const questions = await questionRepository.getQuestionsByCardId(
+          card.id
+        );
         const sns_links = await snsRepository.getSnsByCardId(card.id);
         const tags = await tagRepository.getTagsByCard(card.id);
-        
-        return {
-          ...card,
-          questions,
-          sns_links,
-          tags,
-        };
+
+        return { ...card, questions, sns_links, tags };
       })
     );
 
-    res.status(200).json({ 
-      success: true, 
-      data: cardsWithDetails 
-    });
+    res.status(200).json({ success: true, data: cardsWithDetails });
   } catch (error) {
     console.error('Error fetching shared cards:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -420,31 +390,30 @@ router.post('/share', async (req, res) => {
   const { userId, cardId } = req.body;
 
   if (!userId || !cardId) {
-    return res.status(400).json({ 
-      error: 'userId and cardId are required' 
-    });
+    return res.status(400).json({ error: 'userId and cardId are required' });
   }
 
   try {
     // 이미 공유된 카드인지 확인
-    const isShared = await sharedCardRepository.checkIfCardShared(userId, cardId);
+    const isShared = await sharedCardRepository.checkIfCardShared(
+      userId,
+      cardId
+    );
     if (isShared) {
-      return res.status(409).json({ 
-        error: 'Card already shared with this user' 
-      });
+      return res
+        .status(409)
+        .json({ error: 'Card already shared with this user' });
     }
 
     await sharedCardRepository.shareCard(userId, cardId);
-    res.status(201).json({ 
-      success: true, 
-      message: 'Card shared successfully' 
-    });
+    res
+      .status(201)
+      .json({ success: true, message: 'Card shared successfully' });
   } catch (error) {
     console.error('Error sharing card:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -453,25 +422,21 @@ router.delete('/shared/:userId/:cardId', async (req, res) => {
   try {
     const userId = parseInt(req.params.userId);
     const cardId = parseInt(req.params.cardId);
-    
+
     const result = await sharedCardRepository.removeSharedCard(userId, cardId);
-    
+
     if (result.affectedRows === 0) {
-      return res.status(404).json({ 
-        error: 'Shared card not found' 
-      });
+      return res.status(404).json({ error: 'Shared card not found' });
     }
-    
-    res.status(200).json({ 
-      success: true, 
-      message: 'Shared card removed successfully' 
-    });
+
+    res
+      .status(200)
+      .json({ success: true, message: 'Shared card removed successfully' });
   } catch (error) {
     console.error('Error removing shared card:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -479,24 +444,22 @@ router.delete('/shared/:userId/:cardId', async (req, res) => {
 router.post('/generate-link/:cardId', async (req, res) => {
   try {
     const cardId = parseInt(req.params.cardId);
-    
+
     const shareToken = await cardRepository.generateCardLink(cardId);
     const shareUrl = `${req.protocol}://${req.get('host')}/card/shared-link/${shareToken}`;
-    
-    res.status(200).json({ 
-      success: true, 
-      data: {
-        shareToken,
-        shareUrl,
-      },
-      message: 'Share link generated successfully'
-    });
+
+    res
+      .status(200)
+      .json({
+        success: true,
+        data: { shareToken, shareUrl },
+        message: 'Share link generated successfully',
+      });
   } catch (error) {
     console.error('Error generating share link:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -504,107 +467,104 @@ router.post('/generate-link/:cardId', async (req, res) => {
 router.get('/shared-link/:shareToken', async (req, res) => {
   try {
     const shareToken = req.params.shareToken;
-    
+
     const card = await cardRepository.getCardByShareToken(shareToken);
     if (!card) {
-      return res.status(404).json({ 
-        error: 'Card not found or link expired' 
-      });
+      return res.status(404).json({ error: 'Card not found or link expired' });
     }
 
     const questions = await questionRepository.getQuestionsByCardId(card.id);
     const sns_links = await snsRepository.getSnsByCardId(card.id);
     const tags = await tagRepository.getTagsByCard(card.id);
 
-    res.status(200).json({ 
-      success: true, 
-      data: {
-        ...card,
-        questions,
-        sns_links,
-        tags,
-      }
-    });
+    res
+      .status(200)
+      .json({ success: true, data: { ...card, questions, sns_links, tags } });
   } catch (error) {
     console.error('Error fetching card by share link:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
 // 이미지 업로드 (프로필, 명함 사진)
-router.post('/upload-image', upload.fields([
-  { name: 'profile_image', maxCount: 1 },
-  { name: 'card_image', maxCount: 1 }
-]), async (req, res) => {
-  try {
-    const files = req.files;
-    if (!files || (Object.keys(files).length === 0)) {
-      return res.status(400).json({ error: 'No files uploaded' });
-    }
+router.post(
+  '/upload-image',
+  upload.fields([
+    { name: 'profile_image', maxCount: 1 },
+    { name: 'card_image', maxCount: 1 },
+  ]),
+  async (req, res) => {
+    try {
+      const files = req.files;
+      if (!files || Object.keys(files).length === 0) {
+        return res.status(400).json({ error: 'No files uploaded' });
+      }
 
-    const result = {};
-    
-    if (files.profile_image) {
-      const uploadResult = await uploadImageToS3(files.profile_image[0], 'profile', req.body.id);
-      result.profile_image_url = uploadResult.location;
-    }
-    
-    if (files.card_image) {
-      const uploadResult = await uploadImageToS3(files.card_image[0], 'card', req.body.id);
-      result.card_image_url = uploadResult.location;
-    }
+      const result = {};
 
-    res.status(200).json({ 
-      success: true,
-      data: result,
-      message: 'Images uploaded successfully'
-    });
-  } catch (error) {
-    console.error('Error uploading images:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+      if (files.profile_image) {
+        const uploadResult = await uploadImageToS3(
+          files.profile_image[0],
+          'profile',
+          req.body.id
+        );
+        result.profile_image_url = uploadResult.location;
+      }
+
+      if (files.card_image) {
+        const uploadResult = await uploadImageToS3(
+          files.card_image[0],
+          'card',
+          req.body.id
+        );
+        result.card_image_url = uploadResult.location;
+      }
+
+      res
+        .status(200)
+        .json({
+          success: true,
+          data: result,
+          message: 'Images uploaded successfully',
+        });
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      res
+        .status(500)
+        .json({ error: 'Internal server error', message: error.message });
+    }
   }
-});
+);
 
 // 태그별 카드 조회
 router.get('/tag/:tagId/:userId', async (req, res) => {
   try {
     const tagId = parseInt(req.params.tagId);
     const userId = parseInt(req.params.userId);
-    
+
     const cards = await tagRepository.getCardsByTag(tagId, userId);
-    
+
     // 각 카드에 대한 추가 정보 조회
     const cardsWithDetails = await Promise.all(
       cards.map(async (card) => {
-        const questions = await questionRepository.getQuestionsByCardId(card.id);
+        const questions = await questionRepository.getQuestionsByCardId(
+          card.id
+        );
         const sns_links = await snsRepository.getSnsByCardId(card.id);
         const tags = await tagRepository.getTagsByCard(card.id);
-        
-        return {
-          ...card,
-          questions,
-          sns_links,
-          tags,
-        };
+
+        return { ...card, questions, sns_links, tags };
       })
     );
 
-    res.status(200).json({ 
-      success: true, 
-      data: cardsWithDetails 
-    });
+    res.status(200).json({ success: true, data: cardsWithDetails });
   } catch (error) {
     console.error('Error fetching cards by tag:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -613,33 +573,26 @@ router.get('/public/:userId?', async (req, res) => {
   try {
     const userId = req.params.userId ? parseInt(req.params.userId) : null;
     const cards = await cardRepository.getPublicCards(userId);
-    
+
     // 각 카드에 대한 추가 정보 조회
     const cardsWithDetails = await Promise.all(
       cards.map(async (card) => {
-        const questions = await questionRepository.getQuestionsByCardId(card.id);
+        const questions = await questionRepository.getQuestionsByCardId(
+          card.id
+        );
         const sns_links = await snsRepository.getSnsByCardId(card.id);
         const tags = await tagRepository.getTagsByCard(card.id);
-        
-        return {
-          ...card,
-          questions,
-          sns_links,
-          tags,
-        };
+
+        return { ...card, questions, sns_links, tags };
       })
     );
 
-    res.status(200).json({ 
-      success: true, 
-      data: cardsWithDetails 
-    });
+    res.status(200).json({ success: true, data: cardsWithDetails });
   } catch (error) {
     console.error('Error fetching public cards:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -648,35 +601,28 @@ router.get('/search/:searchTerm/:userId?', async (req, res) => {
   try {
     const searchTerm = req.params.searchTerm;
     const userId = req.params.userId ? parseInt(req.params.userId) : null;
-    
+
     const cards = await cardRepository.searchCards(searchTerm, userId);
-    
+
     // 각 카드에 대한 추가 정보 조회
     const cardsWithDetails = await Promise.all(
       cards.map(async (card) => {
-        const questions = await questionRepository.getQuestionsByCardId(card.id);
+        const questions = await questionRepository.getQuestionsByCardId(
+          card.id
+        );
         const sns_links = await snsRepository.getSnsByCardId(card.id);
         const tags = await tagRepository.getTagsByCard(card.id);
-        
-        return {
-          ...card,
-          questions,
-          sns_links,
-          tags,
-        };
+
+        return { ...card, questions, sns_links, tags };
       })
     );
 
-    res.status(200).json({ 
-      success: true, 
-      data: cardsWithDetails 
-    });
+    res.status(200).json({ success: true, data: cardsWithDetails });
   } catch (error) {
     console.error('Error searching cards:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
