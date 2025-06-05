@@ -8,34 +8,36 @@ const userRepository = new UserRepository(MysqlPoolProvider.getPool());
 
 // 사용자 생성
 router.post('/upload', async (req, res) => {
-  const { name, email, profile_img_url } = req.body;
+  const { id, name, email, profileImageURL } = req.body;
+  console.log(req.body);
 
   // 필수 필드 검증
-  if (!name || !email) {
+  if (!id || !name) {
     return res.status(400).json({ 
-      error: 'Name and email are required fields' 
+      error: 'Id, Name are required fields' 
     });
   }
 
   // 이메일 형식 검증
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    return res.status(400).json({ 
-      error: 'Invalid email format' 
-    });
-  }
+  // const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  // if (!emailRegex.test(email)) {
+  //   return res.status(400).json({ 
+  //     error: 'Invalid email format' 
+  //   });
+  // }
 
   try {
     const user = {
+      id,
       name,
       email,
-      profile_img_url: profile_img_url || null,
+      profile_img_url: profileImageURL || null,
     };
 
     const result = await userRepository.insertUser(user);
     res.status(201).json({ 
       success: true, 
-      data: result,
+      data: id,
       message: 'User created successfully'
     });
   } catch (error) {
@@ -66,10 +68,11 @@ router.get('/:userId', async (req, res) => {
         error: 'User not found' 
       });
     }
+    console.log(user);
     
     res.status(200).json({ 
-      success: true, 
-      data: user 
+      ...user,
+      profileImageURL: user.profile_img_url
     });
   } catch (error) {
     console.error('Error fetching user:', error);
