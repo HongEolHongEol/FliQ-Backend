@@ -47,7 +47,7 @@ async function uploadToS3(file, folder = 'general') {
     Key: key,
     Body: file.buffer,
     ContentType: file.mimetype,
-    ACL: 'public-read',
+    //ACL: 'public-read',
   };
 
   const upload = new Upload({

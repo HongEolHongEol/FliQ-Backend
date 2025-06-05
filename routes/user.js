@@ -26,6 +26,14 @@ router.post('/upload', async (req, res) => {
   }
 
   try {
+    // 이메일 중복 체크
+    const existingUser = await userRepository.findUserByEmail(email);
+    if (existingUser) {
+      return res.status(409).json({ 
+        error: 'Email already exists' 
+      });
+    }
+
     const user = {
       name,
       email,
@@ -40,14 +48,6 @@ router.post('/upload', async (req, res) => {
     });
   } catch (error) {
     console.error('Error inserting user:', error);
-    
-    // 중복 이메일 에러 처리
-    if (error.code === 'ER_DUP_ENTRY') {
-      return res.status(409).json({ 
-        error: 'Email already exists' 
-      });
-    }
-    
     res.status(500).json({ 
       error: 'Internal server error',
       message: error.message 
