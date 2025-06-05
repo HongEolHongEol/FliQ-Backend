@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import { S3Client } from '@aws-sdk/client-s3';
 
 import createError from 'http-errors';
 import express from 'express';
@@ -20,20 +19,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Environment 설정
-if (process.env.NODE_ENV === 'development') {
-  dotenv.config({ path: '.env.development' });
-} else {
-  dotenv.config({ path: '.env.production' });
-}
-
-// AWS S3 클라이언트 설정 (AWS SDK v3 방식)
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
+dotenv.config();
 
 app.use(logger('dev'));
 app.use(express.json());
@@ -44,8 +30,11 @@ app.use(cookieParser());
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  
+  res.header(
+    'Access-Control-Allow-Headers',
+    'Origin, X-Requested-With, Content-Type, Accept, Authorization'
+  );
+
   if (req.method === 'OPTIONS') {
     res.sendStatus(200);
   } else {
@@ -54,22 +43,22 @@ app.use((req, res, next) => {
 });
 
 // MySQL 연결 테스트 및 초기화 미들웨어
-    try {
-      const pool = MysqlPoolProvider.getPool();
-      const connection = await pool.getConnection();
-      console.log('MySQL connection established successfully');
-      connection.release();
-      app.locals.mysqlTested = true;
-    } catch (err) {
-      console.error('Error establishing MySQL connection:', err);
-      // 연결 실패해도 서버는 계속 실행되도록 함
-    }
+try {
+  const pool = MysqlPoolProvider.getPool();
+  const connection = await pool.getConnection();
+  console.log('MySQL connection established successfully');
+  connection.release();
+  app.locals.mysqlTested = true;
+} catch (err) {
+  console.error('Error establishing MySQL connection:', err);
+  // 연결 실패해도 서버는 계속 실행되도록 함
+}
 
-  // uploads 디렉토리 생성 (로컬 테스트용)
-  const uploadsDir = path.join(__dirname, 'uploads');
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-  }
+// uploads 디렉토리 생성 (로컬 테스트용)
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // 라우터 설정
 app.use('/', (await import('./routes/index.js')).default);
@@ -91,10 +80,7 @@ app.use(function (err, req, res, next) {
   console.error('Global error handler:', err);
 
   res.status(err.status || 500);
-  res.json({ 
-    error: res.locals.message,
-    status: err.status || 500
-  });
+  res.json({ error: res.locals.message, status: err.status || 500 });
 });
 
 const port = process.env.PORT || 3000;

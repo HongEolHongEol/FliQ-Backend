@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { S3Client, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  DeleteObjectCommand,
+  HeadObjectCommand,
+} from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { v4 as uuidv4 } from 'uuid';
-import dotenv from 'dotenv';
-
-dotenv.config();
 
 const router = Router();
 
@@ -27,7 +28,14 @@ const upload = multer({
   },
   fileFilter: (req, file, cb) => {
     // 파일 타입 검증
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'application/pdf', 'text/plain'];
+    const allowedTypes = [
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/gif',
+      'application/pdf',
+      'text/plain',
+    ];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -50,10 +58,7 @@ async function uploadToS3(file, folder = 'general') {
     ACL: 'public-read',
   };
 
-  const upload = new Upload({
-    client: s3Client,
-    params: uploadParams,
-  });
+  const upload = new Upload({ client: s3Client, params: uploadParams });
 
   const result = await upload.done();
   return {
@@ -68,7 +73,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
     const { description, folder } = req.body;
-    
+
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -83,20 +88,21 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       mimetype: file.mimetype,
       folder: folder || 'general',
       description: description || null,
-      uploaded_at: new Date()
+      uploaded_at: new Date(),
     };
 
-    res.status(200).json({ 
-      success: true,
-      data: fileData,
-      message: 'File uploaded successfully'
-    });
+    res
+      .status(200)
+      .json({
+        success: true,
+        data: fileData,
+        message: 'File uploaded successfully',
+      });
   } catch (error) {
     console.error('Error uploading file:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -105,13 +111,13 @@ router.post('/upload-multiple', upload.array('files', 5), async (req, res) => {
   try {
     const files = req.files;
     const { folder } = req.body;
-    
+
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
     }
 
     // 모든 파일을 S3에 업로드
-    const uploadPromises = files.map(file => uploadToS3(file, folder));
+    const uploadPromises = files.map((file) => uploadToS3(file, folder));
     const uploadResults = await Promise.all(uploadPromises);
 
     // Map each file to create consistent metadata structure
@@ -121,20 +127,21 @@ router.post('/upload-multiple', upload.array('files', 5), async (req, res) => {
       size: file.size,
       mimetype: file.mimetype,
       folder: folder || 'general',
-      uploaded_at: new Date()
+      uploaded_at: new Date(),
     }));
 
-    res.status(200).json({ 
-      success: true,
-      data: filesData,
-      message: `${files.length} files uploaded successfully`
-    });
+    res
+      .status(200)
+      .json({
+        success: true,
+        data: filesData,
+        message: `${files.length} files uploaded successfully`,
+      });
   } catch (error) {
     console.error('Error uploading files:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -143,7 +150,7 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
     const file = req.file;
     const { alt_text, folder } = req.body;
-    
+
     if (!file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
@@ -163,20 +170,21 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
       mimetype: file.mimetype,
       folder: folder || 'images',
       alt_text: alt_text || null,
-      uploaded_at: new Date()
+      uploaded_at: new Date(),
     };
 
-    res.status(200).json({ 
-      success: true,
-      data: imageData,
-      message: 'Image uploaded successfully'
-    });
+    res
+      .status(200)
+      .json({
+        success: true,
+        data: imageData,
+        message: 'Image uploaded successfully',
+      });
   } catch (error) {
     console.error('Error uploading image:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -184,7 +192,7 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
 router.delete('/delete', async (req, res) => {
   try {
     const { fileUrl } = req.body;
-    
+
     if (!fileUrl) {
       return res.status(400).json({ error: 'File URL is required' });
     }
@@ -195,21 +203,19 @@ router.delete('/delete', async (req, res) => {
 
     const deleteCommand = new DeleteObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
-      Key: key
+      Key: key,
     });
 
     await s3Client.send(deleteCommand);
 
-    res.status(200).json({ 
-      success: true,
-      message: 'File deleted successfully'
-    });
+    res
+      .status(200)
+      .json({ success: true, message: 'File deleted successfully' });
   } catch (error) {
     console.error('Error deleting file:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
@@ -217,7 +223,7 @@ router.delete('/delete', async (req, res) => {
 router.get('/info', async (req, res) => {
   try {
     const { fileUrl } = req.query;
-    
+
     if (!fileUrl) {
       return res.status(400).json({ error: 'File URL is required' });
     }
@@ -228,7 +234,7 @@ router.get('/info', async (req, res) => {
 
     const headCommand = new HeadObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
-      Key: key
+      Key: key,
     });
 
     const data = await s3Client.send(headCommand);
@@ -238,26 +244,20 @@ router.get('/info', async (req, res) => {
       size: data.ContentLength,
       mimetype: data.ContentType,
       lastModified: data.LastModified,
-      etag: data.ETag
+      etag: data.ETag,
     };
 
-    res.status(200).json({ 
-      success: true,
-      data: fileInfo
-    });
+    res.status(200).json({ success: true, data: fileInfo });
   } catch (error) {
     // Handle specific case where file doesn't exist
     if (error.name === 'NotFound') {
-      return res.status(404).json({ 
-        error: 'File not found' 
-      });
+      return res.status(404).json({ error: 'File not found' });
     }
-    
+
     console.error('Error getting file info:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      message: error.message 
-    });
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
   }
 });
 
