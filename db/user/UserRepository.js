@@ -7,10 +7,11 @@ class UserRepository {
     const connection = await this.pool.getConnection();
     try {
       const query = `
-        INSERT INTO User (name, email, profile_img_url) 
-        VALUES (?, ?, ?)
+        INSERT INTO User (id, name, email, profile_img_url) 
+        VALUES (?, ?, ?, ?)
       `;
       const [result] = await connection.execute(query, [
+        user.id,
         user.name,
         user.email,
         user.profile_img_url,
