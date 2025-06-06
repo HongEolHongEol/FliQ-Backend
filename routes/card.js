@@ -86,12 +86,12 @@ router.post('/upload-basic', async (req, res) => {
 
   try {
     const card = {
-      name,
-      contact,
-      email,
-      organization,
-      position,
-      introduction,
+      name: name ?? null,
+      contact: contact ?? null,
+      email: email ?? null,
+      organization: organization ?? null,
+      position: position ?? null,
+      introduction: introduction ?? null,
       user_id: parseInt(user_id),
       _private: _private === 'true' || _private === true,
       card_image_url: card_image_url || null,
