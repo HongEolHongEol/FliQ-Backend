@@ -28,7 +28,7 @@ router.post('/upload', async (req, res) => {
 
   try {
     // 이메일 중복 체크
-    const existingUser = await userRepository.findUserByEmail(email);
+    const existingUser = await userRepository.getUserByEmail(email);
     if (existingUser) {
       return res.status(409).json({ 
         error: 'Email already exists' 

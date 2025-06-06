@@ -70,8 +70,8 @@ const sharedCardRepository = new SharedCardRepository(
   MysqlPoolProvider.getPool()
 );
 
-// 카드 정보 업로드 (생성)
-router.post('/upload', async (req, res) => {
+// 명함 기본 정보 저장
+router.post('/upload-basic', async (req, res) => {
   const {
     name,
     contact,
@@ -83,9 +83,6 @@ router.post('/upload', async (req, res) => {
     _private,
     card_image_url,
     profile_image_url,
-    questions,
-    sns_links,
-    tags,
   } = req.body;
 
   if (!name || !user_id) {
@@ -94,10 +91,7 @@ router.post('/upload', async (req, res) => {
       .json({ error: 'Name and user_id are required fields' });
   }
 
-  const connection = await MysqlPoolProvider.getPool().getConnection();
   try {
-    await connection.beginTransaction();
-
     const card = {
       name,
       contact,
@@ -113,6 +107,39 @@ router.post('/upload', async (req, res) => {
 
     const cardResult = await cardRepository.insertCard(card);
     const cardId = cardResult.insertId;
+
+    res
+      .status(201)
+      .json({
+        success: true,
+        data: { ...cardResult, id: cardId },
+        message: 'Card basic info created successfully',
+      });
+  } catch (error) {
+    console.error('Error inserting basic card:', error);
+    res
+      .status(500)
+      .json({ error: 'Internal server error', message: error.message });
+  }
+});
+
+// 기존 명함에 추가 정보 업데이트 (질문, SNS, 태그)
+router.put('/:cardId/details', async (req, res) => {
+  const cardId = parseInt(req.params.cardId);
+  const {
+    questions,
+    sns_links,
+    tags,
+  } = req.body;
+
+  const connection = await MysqlPoolProvider.getPool().getConnection();
+  try {
+    await connection.beginTransaction();
+
+    // 기존 관련 데이터 삭제 (업데이트 방식)
+    await questionRepository.deleteQuestionsByCardId(cardId);
+    await snsRepository.deleteSnsByCardId(cardId);
+    await tagRepository.removeAllCardTags(cardId);
 
     // 질문 추가
     if (questions && Array.isArray(questions)) {
@@ -155,15 +182,11 @@ router.post('/upload', async (req, res) => {
 
     await connection.commit();
     res
-      .status(201)
-      .json({
-        success: true,
-        data: { ...cardResult, id: cardId },
-        message: 'Card created successfully',
-      });
+      .status(200)
+      .json({ success: true, message: 'Card details updated successfully' });
   } catch (error) {
     await connection.rollback();
-    console.error('Error inserting card:', error);
+    console.error('Error updating card details:', error);
     res
       .status(500)
       .json({ error: 'Internal server error', message: error.message });

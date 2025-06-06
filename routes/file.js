@@ -1,14 +1,16 @@
 import { Router } from 'express';
 import multer from 'multer';
-import {
-  S3Client,
-  DeleteObjectCommand,
-  HeadObjectCommand,
-} from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { v4 as uuidv4 } from 'uuid';
+import dotenv from 'dotenv';
+import UserRepository from '../db/user/UserRepository.js';
+import MysqlPoolProvider from '../db/provider.js';
+
+dotenv.config();
 
 const router = Router();
+const userRepository = new UserRepository(MysqlPoolProvider.getPool());
 
 // AWS S3 클라이언트 설정
 const s3Client = new S3Client({
@@ -31,11 +33,10 @@ const upload = multer({
     const allowedTypes = [
       'image/jpeg',
       'image/jpg',
-      'image/png',
+      'image/png', 
       'image/gif',
       'application/pdf',
-      'text/plain',
-    ];
+      'text/plain'];
     if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
@@ -55,10 +56,13 @@ async function uploadToS3(file, folder = 'general') {
     Key: key,
     Body: file.buffer,
     ContentType: file.mimetype,
-    //ACL: 'public-read',
+    ACL: 'public-read',
   };
 
-  const upload = new Upload({ client: s3Client, params: uploadParams });
+  const upload = new Upload({
+    client: s3Client,
+    params: uploadParams,
+  });
 
   const result = await upload.done();
   return {
@@ -68,14 +72,95 @@ async function uploadToS3(file, folder = 'general') {
   };
 }
 
-// 단일 파일 업로드
+// 프로필 이미지 업로드 (유저 ID와 연동)
+router.post('/upload-profile', upload.single('profileImage'), async (req, res) => {
+  try {
+    const file = req.file;
+    const { userId } = req.body;
+    
+    if (!file) {
+      return res.status(400).json({ error: 'No profile image uploaded' });
+    }
+
+    if (!userId) {
+      return res.status(400).json({ error: 'User ID is required' });
+    }
+
+    // 유저 존재 확인
+    const existingUser = await userRepository.getUserById(parseInt(userId));
+    if (!existingUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // 이미지 파일인지 확인
+    if (!file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ error: 'Only image files are allowed for profile' });
+    }
+
+    // 기존 프로필 이미지가 있다면 S3에서 삭제
+    if (existingUser.profile_img_url) {
+      try {
+        const oldUrl = new URL(existingUser.profile_img_url);
+        const oldKey = oldUrl.pathname.substring(1);
+        
+        const deleteCommand = new DeleteObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: oldKey
+        });
+        
+        await s3Client.send(deleteCommand);
+      } catch (deleteError) {
+        console.warn('Failed to delete old profile image:', deleteError);
+        // 기존 이미지 삭제 실패해도 새 이미지 업로드는 계속 진행
+      }
+    }
+
+    // 새 프로필 이미지 업로드
+    const uploadResult = await uploadToS3(file, `profiles/${userId}`);
+
+    // 데이터베이스에 프로필 이미지 URL 업데이트
+    // UserRepository에 updateProfileImage 메서드가 필요합니다
+    await userRepository.updateProfileImage(parseInt(userId), uploadResult.location);
+
+    const profileData = {
+      userId: parseInt(userId),
+      filename: file.originalname,
+      url: uploadResult.location,
+      size: file.size,
+      mimetype: file.mimetype,
+      uploaded_at: new Date()
+    };
+
+    res.status(200).json({ 
+      success: true,
+      data: profileData,
+      message: 'Profile image uploaded successfully'
+    });
+  } catch (error) {
+    console.error('Error uploading profile image:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 단일 파일 업로드 (유저 ID 옵션 추가)
 router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     const file = req.file;
-    const { description, folder } = req.body;
-
+    const { description, folder, userId } = req.body;
+    
     if (!file) {
       return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    // userId가 제공된 경우 유저 존재 확인
+    if (userId) {
+      const existingUser = await userRepository.getUserById(parseInt(userId));
+      if (!existingUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
     }
 
     const uploadResult = await uploadToS3(file, folder);
@@ -88,36 +173,44 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       mimetype: file.mimetype,
       folder: folder || 'general',
       description: description || null,
-      uploaded_at: new Date(),
+      userId: userId ? parseInt(userId) : null,
+      uploaded_at: new Date()
     };
 
-    res
-      .status(200)
-      .json({
-        success: true,
-        data: fileData,
-        message: 'File uploaded successfully',
-      });
+    res.status(200).json({ 
+      success: true,
+      data: fileData,
+      message: 'File uploaded successfully'
+    });
   } catch (error) {
     console.error('Error uploading file:', error);
-    res
-      .status(500)
-      .json({ error: 'Internal server error', message: error.message });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 });
 
-// 다중 파일 업로드
+// 다중 파일 업로드 (유저 ID 옵션 추가)
 router.post('/upload-multiple', upload.array('files', 5), async (req, res) => {
   try {
     const files = req.files;
-    const { folder } = req.body;
-
+    const { folder, userId } = req.body;
+    
     if (!files || files.length === 0) {
       return res.status(400).json({ error: 'No files uploaded' });
     }
 
+    // userId가 제공된 경우 유저 존재 확인
+    if (userId) {
+      const existingUser = await userRepository.getUserById(parseInt(userId));
+      if (!existingUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+    }
+
     // 모든 파일을 S3에 업로드
-    const uploadPromises = files.map((file) => uploadToS3(file, folder));
+    const uploadPromises = files.map(file => uploadToS3(file, folder));
     const uploadResults = await Promise.all(uploadPromises);
 
     // Map each file to create consistent metadata structure
@@ -127,30 +220,30 @@ router.post('/upload-multiple', upload.array('files', 5), async (req, res) => {
       size: file.size,
       mimetype: file.mimetype,
       folder: folder || 'general',
-      uploaded_at: new Date(),
+      userId: userId ? parseInt(userId) : null,
+      uploaded_at: new Date()
     }));
 
-    res
-      .status(200)
-      .json({
-        success: true,
-        data: filesData,
-        message: `${files.length} files uploaded successfully`,
-      });
+    res.status(200).json({ 
+      success: true,
+      data: filesData,
+      message: `${files.length} files uploaded successfully`
+    });
   } catch (error) {
     console.error('Error uploading files:', error);
-    res
-      .status(500)
-      .json({ error: 'Internal server error', message: error.message });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 });
 
-// 이미지 전용 업로드 (최적화된 설정)
+// 이미지 전용 업로드 (유저 ID 옵션 추가)
 router.post('/upload-image', upload.single('image'), async (req, res) => {
   try {
     const file = req.file;
-    const { alt_text, folder } = req.body;
-
+    const { alt_text, folder, userId } = req.body;
+    
     if (!file) {
       return res.status(400).json({ error: 'No image uploaded' });
     }
@@ -158,6 +251,14 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
     // Validate that uploaded file is actually an image
     if (!file.mimetype.startsWith('image/')) {
       return res.status(400).json({ error: 'Only image files are allowed' });
+    }
+
+    // userId가 제공된 경우 유저 존재 확인
+    if (userId) {
+      const existingUser = await userRepository.getUserById(parseInt(userId));
+      if (!existingUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
     }
 
     const uploadResult = await uploadToS3(file, folder || 'images');
@@ -170,31 +271,68 @@ router.post('/upload-image', upload.single('image'), async (req, res) => {
       mimetype: file.mimetype,
       folder: folder || 'images',
       alt_text: alt_text || null,
-      uploaded_at: new Date(),
+      userId: userId ? parseInt(userId) : null,
+      uploaded_at: new Date()
     };
 
-    res
-      .status(200)
-      .json({
-        success: true,
-        data: imageData,
-        message: 'Image uploaded successfully',
-      });
+    res.status(200).json({ 
+      success: true,
+      data: imageData,
+      message: 'Image uploaded successfully'
+    });
   } catch (error) {
     console.error('Error uploading image:', error);
-    res
-      .status(500)
-      .json({ error: 'Internal server error', message: error.message });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 유저별 파일 목록 조회
+router.get('/user/:userId', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.userId);
+    
+    // 유저 존재 확인
+    const existingUser = await userRepository.getUserById(userId);
+    if (!existingUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // 유저의 프로필 이미지 URL을 포함한 파일 목록
+    const userFiles = {
+      profileImage: existingUser.profile_img_url || null
+    };
+
+    res.status(200).json({ 
+      success: true,
+      data: userFiles
+    });
+  } catch (error) {
+    console.error('Error fetching user files:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 });
 
 // 파일 삭제 (S3에서)
 router.delete('/delete', async (req, res) => {
   try {
-    const { fileUrl } = req.body;
-
+    const { fileUrl, userId } = req.body;
+    
     if (!fileUrl) {
       return res.status(400).json({ error: 'File URL is required' });
+    }
+
+    // userId가 제공된 경우 권한 확인 (선택적)
+    if (userId) {
+      const existingUser = await userRepository.getUserById(parseInt(userId));
+      if (!existingUser) {
+        return res.status(404).json({ error: 'User not found' });
+      }
     }
 
     // Extract the S3 object key from the full URL
@@ -203,19 +341,26 @@ router.delete('/delete', async (req, res) => {
 
     const deleteCommand = new DeleteObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
-      Key: key,
+      Key: key
     });
 
     await s3Client.send(deleteCommand);
 
-    res
-      .status(200)
-      .json({ success: true, message: 'File deleted successfully' });
+    // 프로필 이미지인 경우 데이터베이스에서도 URL 제거
+    if (userId && key.includes(`profiles/${userId}`)) {
+      await userRepository.updateProfileImage(parseInt(userId), null);
+    }
+
+    res.status(200).json({ 
+      success: true,
+      message: 'File deleted successfully'
+    });
   } catch (error) {
     console.error('Error deleting file:', error);
-    res
-      .status(500)
-      .json({ error: 'Internal server error', message: error.message });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 });
 
@@ -223,7 +368,7 @@ router.delete('/delete', async (req, res) => {
 router.get('/info', async (req, res) => {
   try {
     const { fileUrl } = req.query;
-
+    
     if (!fileUrl) {
       return res.status(400).json({ error: 'File URL is required' });
     }
@@ -234,7 +379,7 @@ router.get('/info', async (req, res) => {
 
     const headCommand = new HeadObjectCommand({
       Bucket: process.env.S3_BUCKET_NAME,
-      Key: key,
+      Key: key
     });
 
     const data = await s3Client.send(headCommand);
@@ -244,20 +389,26 @@ router.get('/info', async (req, res) => {
       size: data.ContentLength,
       mimetype: data.ContentType,
       lastModified: data.LastModified,
-      etag: data.ETag,
+      etag: data.ETag
     };
 
-    res.status(200).json({ success: true, data: fileInfo });
+    res.status(200).json({ 
+      success: true,
+      data: fileInfo
+    });
   } catch (error) {
     // Handle specific case where file doesn't exist
     if (error.name === 'NotFound') {
-      return res.status(404).json({ error: 'File not found' });
+      return res.status(404).json({ 
+        error: 'File not found' 
+      });
     }
-
+    
     console.error('Error getting file info:', error);
-    res
-      .status(500)
-      .json({ error: 'Internal server error', message: error.message });
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
   }
 });
 
