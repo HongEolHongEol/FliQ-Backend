@@ -85,6 +85,14 @@ router.post('/upload-basic', async (req, res) => {
   } = req.body;
 
   try {
+    // user_id 필수 체크 및 유효성 검사
+    if (!user_id || isNaN(parseInt(user_id))) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'user_id is required and must be a valid number'
+      });
+    }
+
     const card = {
       name: name ?? null,
       contact: contact ?? null,
