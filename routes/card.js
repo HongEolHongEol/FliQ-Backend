@@ -82,14 +82,7 @@ router.post('/upload-basic', async (req, res) => {
     user_id,
     _private,
     card_image_url,
-    profile_image_url,
   } = req.body;
-
-  if (!name || !user_id) {
-    return res
-      .status(400)
-      .json({ error: 'Name and user_id are required fields' });
-  }
 
   try {
     const card = {
@@ -101,8 +94,7 @@ router.post('/upload-basic', async (req, res) => {
       introduction,
       user_id: parseInt(user_id),
       _private: _private === 'true' || _private === true,
-      card_image_url,
-      profile_image_url,
+      card_image_url: card_image_url || null,
     };
 
     const cardResult = await cardRepository.insertCard(card);
