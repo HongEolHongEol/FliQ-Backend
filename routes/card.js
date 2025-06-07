@@ -15,6 +15,25 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import https from 'https';
 import http from 'http';
+import { exec } from 'child_process';
+
+exec('which python3', (error, stdout, stderr) => {
+  if (error) {
+    console.error(`❌ Python3 경로 확인 실패: ${error.message}`);
+    return;
+  }
+  if (stderr) {
+    console.error(`❌ Python3 경로 확인 오류: ${stderr}`);
+    return;
+  }
+  const pythonPath = stdout.trim();
+  console.log(`🐍 Python3 경로: ${pythonPath}`)
+  if (!fs.existsSync(pythonPath)) {
+    console.error(`❌ Python3 경로가 존재하지 않습니다: ${pythonPath}`);
+    return;
+  }
+  console.log(`✅ Python3 경로가 유효합니다: ${pythonPath}`);
+});
 
 
 const __filename = fileURLToPath(import.meta.url);
