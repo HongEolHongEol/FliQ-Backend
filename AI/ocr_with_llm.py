@@ -142,17 +142,31 @@ def classify_business_card_info(text):
         return {"error": f"예상치 못한 오류: {str(e)}"}
 
 def process_image_from_path(image_path):
-    """이미지 파일 경로로부터 OCR 처리"""
+    """로컬 이미지 파일 경로로부터 OCR 처리"""
     try:
+        print(f"🔍 이미지 파일 처리 시작: {image_path}", file=sys.stderr)
+        
+        # 파일 존재 확인
+        if not os.path.exists(image_path):
+            raise Exception(f"이미지 파일이 존재하지 않습니다: {image_path}")
+        
+        # 파일 크기 확인
+        file_size = os.path.getsize(image_path)
+        print(f"📁 파일 크기: {file_size} bytes", file=sys.stderr)
+        
         # Google Vision API 클라이언트 생성
         client = vision.ImageAnnotatorClient()
 
         # 이미지 로드
         with io.open(image_path, "rb") as image_file:
             content = image_file.read()
+        
+        print(f"📖 이미지 파일 읽기 완료: {len(content)} bytes", file=sys.stderr)
+        
         image = vision.Image(content=content)
 
         # OCR 요청
+        print("🔍 Google Vision API OCR 요청 시작...", file=sys.stderr)
         response = client.document_text_detection(image=image)
 
         if response.error.message:
@@ -161,8 +175,11 @@ def process_image_from_path(image_path):
         # OCR 결과 추출
         if response.text_annotations:
             extracted_text = response.text_annotations[0].description
+            print(f"✅ OCR 텍스트 추출 완료: {len(extracted_text)} 글자", file=sys.stderr)
+            print(f"📝 추출된 텍스트 미리보기: {extracted_text[:100]}...", file=sys.stderr)
             
             # 명함 정보 분류
+            print("🤖 AI 분류 처리 시작...", file=sys.stderr)
             card_info = classify_business_card_info(extracted_text)
             
             # 최종 결과물 생성
@@ -177,53 +194,14 @@ def process_image_from_path(image_path):
                 "extracted_text": extracted_text  # 디버깅용
             }
             
+            print("✅ OCR 및 AI 분류 처리 완료", file=sys.stderr)
             return final_result
         else:
+            print("⚠️ OCR에서 텍스트를 찾을 수 없습니다", file=sys.stderr)
             return {"error": "OCR 결과 없음", "success": False}
             
     except Exception as e:
-        return {"error": str(e), "success": False}
-
-def process_image_from_url(image_url):
-    """이미지 URL로부터 직접 OCR 처리"""
-    try:
-        # Google Vision API 클라이언트 생성
-        client = vision.ImageAnnotatorClient()
-
-        # URL에서 이미지 로드
-        image = vision.Image()
-        image.source.image_uri = image_url
-
-        # OCR 요청
-        response = client.document_text_detection(image=image)
-
-        if response.error.message:
-            raise Exception(f'Google Vision API 오류: {response.error.message}')
-
-        # OCR 결과 추출
-        if response.text_annotations:
-            extracted_text = response.text_annotations[0].description
-            
-            # 명함 정보 분류
-            card_info = classify_business_card_info(extracted_text)
-            
-            # 최종 결과물 생성
-            final_result = {
-                "name": card_info.get("name"),
-                "contact": card_info.get("contact"),
-                "email": card_info.get("email"),
-                "organization": card_info.get("organization"),
-                "position": card_info.get("position"),
-                "sns_links": card_info.get("sns_links"),
-                "success": True,
-                "extracted_text": extracted_text  # 디버깅용
-            }
-            
-            return final_result
-        else:
-            return {"error": "OCR 결과 없음", "success": False}
-            
-    except Exception as e:
+        print(f"❌ OCR 처리 중 오류: {str(e)}", file=sys.stderr)
         return {"error": str(e), "success": False}
 
 def main():
@@ -252,6 +230,7 @@ def main():
         
         # 환경 변수에 절대 경로 설정
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+        print(f"✅ Google Vision API 키 파일 설정: {credentials_path}", file=sys.stderr)
         
         # GROQ API 키 확인
         groq_api_key = os.environ.get("GROQ_API_KEY")
@@ -263,24 +242,18 @@ def main():
         
         # 명령행 인수 확인
         if len(sys.argv) < 2:
-            print(json.dumps({"error": "이미지 경로 또는 URL이 필요합니다", "success": False}, ensure_ascii=False))
+            print(json.dumps({"error": "이미지 파일 경로가 필요합니다", "success": False}, ensure_ascii=False))
             sys.exit(1)
         
-        input_path = sys.argv[1]
+        image_path = sys.argv[1]
         
-        # URL인지 로컬 파일 경로인지 판단
-        if input_path.startswith(('http://', 'https://')):
-            # URL인 경우 직접 처리
-            print(f"✅ URL에서 OCR 처리 시작: {input_path}", file=sys.stderr)
-            result = process_image_from_url(input_path)
-        else:
-            # 로컬 파일 경로인 경우
-            if not os.path.exists(input_path):
-                print(json.dumps({"error": "이미지 파일이 존재하지 않습니다", "success": False}, ensure_ascii=False))
-                sys.exit(1)
-            
-            print(f"✅ 로컬 파일에서 OCR 처리 시작: {input_path}", file=sys.stderr)
-            result = process_image_from_path(input_path)
+        # 로컬 파일 경로 확인
+        if not os.path.exists(image_path):
+            print(json.dumps({"error": f"이미지 파일이 존재하지 않습니다: {image_path}", "success": False}, ensure_ascii=False))
+            sys.exit(1)
+        
+        print(f"✅ 로컬 파일에서 OCR 처리 시작: {image_path}", file=sys.stderr)
+        result = process_image_from_path(image_path)
         
         # 결과 출력
         print(json.dumps(result, ensure_ascii=False))
