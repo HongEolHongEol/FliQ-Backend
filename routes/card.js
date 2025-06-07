@@ -75,13 +75,22 @@ async function uploadImageToS3(file, folder = 'card', id = null) {
 // 이미지 다운로드 함수
 async function downloadImage(url, filepath) {
   return new Promise((resolve, reject) => {
-    const protocol = url.startsWith('https') ? https : http;
+    const protocol = url.startsWith('https:') ? https : http;
     
     const file = fs.createWriteStream(filepath);
     
-    protocol.get(url, (response) => {
+    const request = protocol.get(url, (response) => {
+      // 리다이렉트 처리
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        file.close();
+        fs.unlink(filepath, () => {});
+        return downloadImage(response.headers.location, filepath).then(resolve).catch(reject);
+      }
+      
       if (response.statusCode !== 200) {
-        reject(new Error(`Failed to download image: ${response.statusCode}`));
+        file.close();
+        fs.unlink(filepath, () => {});
+        reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
         return;
       }
       
@@ -91,13 +100,17 @@ async function downloadImage(url, filepath) {
         file.close();
         resolve(filepath);
       });
-      
-      file.on('error', (err) => {
-        fs.unlink(filepath, () => {}); // 실패시 파일 삭제
-        reject(err);
-      });
-    }).on('error', (err) => {
-      reject(err);
+    });
+    
+    request.on('error', (err) => {
+      file.close();
+      fs.unlink(filepath, () => {});
+      reject(new Error(`Network error: ${err.message}`));
+    });
+    
+    file.on('error', (err) => {
+      fs.unlink(filepath, () => {});
+      reject(new Error(`File write error: ${err.message}`));
     });
   });
 }
@@ -485,7 +498,8 @@ router.put('/ocr/:cardId', async (req, res) => {
       }
 
       // 이미지 다운로드
-      const imageExtension = path.extname(existingCard.card_image_url) || '.jpg';
+      const urlParts = existingCard.card_image_url.split('?')[0];
+      const imageExtension = path.extname(urlParts) || '.jpg';
       tempImagePath = path.join(tempDir, `card_${cardId}_${Date.now()}${imageExtension}`);
       
       console.log(`Downloading image from: ${existingCard.card_image_url}`);
@@ -662,7 +676,7 @@ router.post('/ocr-test', async (req, res) => {
       }
     });
 
-    
+
   } catch (error) {
     console.error('OCR 테스트 중 오류:', error);
     res.status(500).json({
