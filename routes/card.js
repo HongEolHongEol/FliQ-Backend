@@ -106,8 +106,7 @@ async function uploadImageToS3(file, folder = 'card', id = null) {
     bucket: process.env.S3_BUCKET_NAME,
   };
 }
-
-// 개선된 이미지 다운로드 함수
+// 이미지 다운로드 함수 (개선된 버전)
 async function downloadImage(url, filepath) {
   return new Promise((resolve, reject) => {
     console.log(`📥 이미지 다운로드 시작: ${url}`);
@@ -133,7 +132,7 @@ async function downloadImage(url, filepath) {
     let fileSize = 0;
     let downloadStartTime = Date.now();
     
-    // 요청 옵션 설정
+    // 요청 옵션 설정 (개선된 헤더)
     const options = {
       hostname: parsedUrl.hostname,
       port: parsedUrl.port,
@@ -148,106 +147,125 @@ async function downloadImage(url, filepath) {
         'Pragma': 'no-cache',
         'Sec-Fetch-Dest': 'image',
         'Sec-Fetch-Mode': 'no-cors',
-        'Sec-Fetch-Site': 'cross-site'
+        'Sec-Fetch-Site': 'cross-site',
+        'Referer': url // 일부 서버에서 요구할 수 있음
       },
       timeout: 30000 // 30초 타임아웃
     };
     
-    const request = protocol.request(options, (response) => {
-      console.log(`📡 응답 상태: ${response.statusCode} ${response.statusMessage}`);
-      console.log(`📋 Content-Type: ${response.headers['content-type']}`);
-      console.log(`📊 Content-Length: ${response.headers['content-length']}`);
-      
-      // 리다이렉트 처리 (최대 5번)
-      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+    // 리다이렉트 카운터 추가 (무한 리다이렉트 방지)
+    let redirectCount = 0;
+    const maxRedirects = 5;
+    
+    const makeRequest = (requestUrl, redirects = 0) => {
+      if (redirects > maxRedirects) {
         file.close();
-        fs.unlink(filepath, () => {}); // 파일 삭제
+        fs.unlink(filepath, () => {});
+        return reject(new Error(`Too many redirects (${redirects})`));
+      }
+      
+      const currentUrl = new URL(requestUrl);
+      const currentProtocol = currentUrl.protocol === 'https:' ? https : http;
+      const currentOptions = {
+        ...options,
+        hostname: currentUrl.hostname,
+        port: currentUrl.port,
+        path: currentUrl.pathname + currentUrl.search
+      };
+      
+      const request = currentProtocol.request(currentOptions, (response) => {
+        console.log(`📡 응답 상태: ${response.statusCode} ${response.statusMessage}`);
+        console.log(`📋 Content-Type: ${response.headers['content-type']}`);
+        console.log(`📊 Content-Length: ${response.headers['content-length']}`);
         
-        const redirectUrl = response.headers.location;
-        console.log(`🔄 리다이렉트: ${redirectUrl}`);
-        
-        // 상대 경로 처리
-        const newUrl = redirectUrl.startsWith('http') 
-          ? redirectUrl 
-          : new URL(redirectUrl, url).href;
+        // 리다이렉트 처리
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          const redirectUrl = response.headers.location;
+          console.log(`🔄 리다이렉트 ${redirects + 1}/${maxRedirects}: ${redirectUrl}`);
           
-        return downloadImage(newUrl, filepath).then(resolve).catch(reject);
-      }
-      
-      // HTTP 오류 상태 처리
-      if (response.statusCode !== 200) {
-        file.close();
-        fs.unlink(filepath, () => {});
-        return reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage} for URL: ${url}`));
-      }
-      
-      // Content-Type 검증 (이미지 파일인지 확인)
-      const contentType = response.headers['content-type'];
-      if (contentType && !contentType.startsWith('image/')) {
-        console.warn(`⚠️ 예상치 못한 Content-Type: ${contentType}`);
-        // 경고만 하고 계속 진행 (일부 서버에서 잘못된 Content-Type을 반환할 수 있음)
-      }
-      
-      // 파일 크기 제한 (50MB)
-      const maxSize = 50 * 1024 * 1024;
-      const contentLength = parseInt(response.headers['content-length']) || 0;
-      if (contentLength > maxSize) {
-        file.close();
-        fs.unlink(filepath, () => {});
-        return reject(new Error(`File too large: ${contentLength} bytes (max: ${maxSize} bytes)`));
-      }
-      
-      // 응답 데이터 파이프
-      response.pipe(file);
-      
-      // 다운로드 진행률 추적
-      response.on('data', (chunk) => {
-        fileSize += chunk.length;
-        if (fileSize > maxSize) {
+          const newUrl = redirectUrl.startsWith('http') 
+            ? redirectUrl 
+            : new URL(redirectUrl, requestUrl).href;
+            
+          return makeRequest(newUrl, redirects + 1);
+        }
+        
+        // HTTP 오류 상태 처리
+        if (response.statusCode !== 200) {
           file.close();
           fs.unlink(filepath, () => {});
-          return reject(new Error(`File too large during download: ${fileSize} bytes`));
+          return reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage} for URL: ${requestUrl}`));
         }
+        
+        // Content-Type 검증 (경고만 출력)
+        const contentType = response.headers['content-type'];
+        if (contentType && !contentType.startsWith('image/')) {
+          console.warn(`⚠️ 예상치 못한 Content-Type: ${contentType}`);
+        }
+        
+        // 파일 크기 제한 체크
+        const maxSize = 50 * 1024 * 1024; // 50MB
+        const contentLength = parseInt(response.headers['content-length']) || 0;
+        if (contentLength > maxSize) {
+          file.close();
+          fs.unlink(filepath, () => {});
+          return reject(new Error(`File too large: ${contentLength} bytes (max: ${maxSize} bytes)`));
+        }
+        
+        // 응답 데이터 처리
+        response.on('data', (chunk) => {
+          fileSize += chunk.length;
+          if (fileSize > maxSize) {
+            file.close();
+            fs.unlink(filepath, () => {});
+            return reject(new Error(`File too large during download: ${fileSize} bytes`));
+          }
+        });
+        
+        // 응답을 파일로 파이프
+        response.pipe(file);
+        
+        // 다운로드 완료 처리
+        file.on('finish', () => {
+          file.close();
+          const downloadTime = Date.now() - downloadStartTime;
+          console.log(`✅ 다운로드 완료: ${filepath}`);
+          console.log(`📊 파일 크기: ${fileSize} bytes`);
+          console.log(`⏱️ 다운로드 시간: ${downloadTime}ms`);
+          
+          // 파일 유효성 검사
+          if (fileSize === 0) {
+            fs.unlink(filepath, () => {});
+            return reject(new Error('Downloaded file is empty'));
+          }
+          
+          if (!fs.existsSync(filepath)) {
+            return reject(new Error('Downloaded file does not exist'));
+          }
+          
+          resolve(filepath);
+        });
       });
       
-      // 다운로드 완료
-      file.on('finish', () => {
+      // 요청 타임아웃 설정
+      request.setTimeout(30000, () => {
+        request.destroy();
         file.close();
-        const downloadTime = Date.now() - downloadStartTime;
-        console.log(`✅ 다운로드 완료: ${filepath}`);
-        console.log(`📊 파일 크기: ${fileSize} bytes`);
-        console.log(`⏱️ 다운로드 시간: ${downloadTime}ms`);
-        
-        // 파일 유효성 검사
-        if (fileSize === 0) {
-          fs.unlink(filepath, () => {});
-          return reject(new Error('Downloaded file is empty'));
-        }
-        
-        // 파일 존재 확인
-        if (!fs.existsSync(filepath)) {
-          return reject(new Error('Downloaded file does not exist'));
-        }
-        
-        resolve(filepath);
+        fs.unlink(filepath, () => {});
+        reject(new Error('Request timeout after 30 seconds'));
       });
-    });
-    
-    // 요청 타임아웃 설정
-    request.setTimeout(30000, () => {
-      request.destroy();
-      file.close();
-      fs.unlink(filepath, () => {});
-      reject(new Error('Request timeout after 30 seconds'));
-    });
-    
-    // 요청 에러 처리
-    request.on('error', (err) => {
-      file.close();
-      fs.unlink(filepath, () => {});
-      console.error(`❌ 요청 오류: ${err.message}`);
-      reject(new Error(`Network error: ${err.message}`));
-    });
+      
+      // 요청 에러 처리
+      request.on('error', (err) => {
+        file.close();
+        fs.unlink(filepath, () => {});
+        console.error(`❌ 요청 오류: ${err.message}`);
+        reject(new Error(`Network error: ${err.message}`));
+      });
+      
+      // 요청 시작
+      request.end();
+    };
     
     // 파일 쓰기 에러 처리
     file.on('error', (err) => {
@@ -256,147 +274,179 @@ async function downloadImage(url, filepath) {
       reject(new Error(`File write error: ${err.message}`));
     });
     
-    // 요청 시작
-    request.end();
+    // 첫 번째 요청 시작
+    makeRequest(url);
   });
 }
 
-// Python OCR 스크립트 실행 함수 (URL 직접 처리 버전) - 수정된 버전
-async function runOCRScriptWithURL(imageUrl) {
-  return new Promise((resolve, reject) => {
-    const pythonPath = getVenvPythonPath(); // 가상환경 Python 경로 사용
-    const pythonScript = path.join(__dirname, '../AI/ocr_with_llm.py'); // 스크립트 경로 수정
-    
-    console.log(`🐍 Python 인터프리터: ${pythonPath}`);
-    console.log(`📄 Python 스크립트: ${pythonScript}`);
-    console.log(`🔗 이미지 URL: ${imageUrl}`);
-    
-    // 스크립트 파일 존재 확인
-    if (!fs.existsSync(pythonScript)) {
-      reject(new Error(`Python 스크립트를 찾을 수 없습니다: ${pythonScript}`));
-      return;
-    }
-    
-    const pythonProcess = spawn(pythonPath, [pythonScript, imageUrl], {
-      env: {
-        ...process.env,
-        // Python 가상환경 관련 환경변수 설정
-        VIRTUAL_ENV: path.join(path.dirname(__dirname), 'AI', 'venv'),
-        PATH: `${path.join(path.dirname(__dirname), 'AI', 'venv', 'bin')}:${process.env.PATH}`
-      }
-    });
-    
-    let stdout = '';
-    let stderr = '';
-    
-    pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    
-    pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-      console.log(`🐍 Python stderr: ${data.toString()}`); // 디버깅용
-    });
-    
-    pythonProcess.on('close', (code) => {
-      console.log(`🐍 Python 프로세스 종료 코드: ${code}`);
-      console.log(`📤 Python stdout: ${stdout}`);
-      
-      if (code !== 0) {
-        console.error(`❌ Python 프로세스 오류: ${stderr}`);
-        reject(new Error(`OCR 스크립트 실행 실패 (코드: ${code}): ${stderr}`));
-        return;
-      }
-      
-      try {
-        const result = JSON.parse(stdout);
-        console.log(`✅ OCR 처리 완료:`, result);
-        resolve(result);
-      } catch (parseError) {
-        console.error(`❌ JSON 파싱 실패: ${parseError.message}`);
-        console.error(`📤 Raw stdout: ${stdout}`);
-        reject(new Error(`OCR 결과 파싱 실패: ${parseError.message}, stdout: ${stdout}`));
-      }
-    });
-    
-    pythonProcess.on('error', (error) => {
-      console.error(`❌ Python 프로세스 시작 오류: ${error.message}`);
-      reject(new Error(`Python 프로세스 오류: ${error.message}`));
-    });
-  });
-}
-
-// Python OCR 스크립트 실행 함수 (로컬 파일 처리 버전) - 수정된 버전
+// Python OCR 스크립트 실행 함수 (로컬 파일 처리)
 async function runOCRScriptWithFile(imagePath) {
   return new Promise((resolve, reject) => {
-    const pythonPath = getVenvPythonPath(); // 가상환경 Python 경로 사용
-    const pythonScript = path.join(__dirname, '../AI/ocr_with_llm.py'); // 스크립트 경로 수정
+    const pythonPath = getVenvPythonPath();
+    const pythonScript = path.join(__dirname, '../AI/ocr_with_llm.py');
     
     console.log(`🐍 Python 인터프리터: ${pythonPath}`);
     console.log(`📄 Python 스크립트: ${pythonScript}`);
     console.log(`🖼️ 이미지 파일: ${imagePath}`);
     
-    // 스크립트 파일 존재 확인
+    // 사전 검증
+    if (!fs.existsSync(pythonPath)) {
+      reject(new Error(`Python 인터프리터를 찾을 수 없습니다: ${pythonPath}`));
+      return;
+    }
+    
     if (!fs.existsSync(pythonScript)) {
       reject(new Error(`Python 스크립트를 찾을 수 없습니다: ${pythonScript}`));
       return;
     }
     
-    // 이미지 파일 존재 확인
     if (!fs.existsSync(imagePath)) {
       reject(new Error(`이미지 파일을 찾을 수 없습니다: ${imagePath}`));
       return;
     }
     
+    // 환경변수 설정
+    const venvPath = path.join(path.dirname(__dirname), 'AI', 'venv');
+    const isWindows = process.platform === 'win32';
+    const envPath = isWindows 
+      ? `${path.join(venvPath, 'Scripts')};${process.env.PATH}`
+      : `${path.join(venvPath, 'bin')}:${process.env.PATH}`;
+    
     const pythonProcess = spawn(pythonPath, [pythonScript, imagePath], {
       env: {
         ...process.env,
-        // Python 가상환경 관련 환경변수 설정
-        VIRTUAL_ENV: path.join(path.dirname(__dirname), 'AI', 'venv'),
-        PATH: `${path.join(path.dirname(__dirname), 'AI', 'venv', 'bin')}:${process.env.PATH}`
-      }
+        VIRTUAL_ENV: venvPath,
+        PATH: envPath,
+        PYTHONPATH: path.join(path.dirname(__dirname), 'AI') // Python 모듈 경로 추가
+      },
+      stdio: ['pipe', 'pipe', 'pipe'] // 명시적으로 stdio 설정
     });
     
     let stdout = '';
     let stderr = '';
+    let isResolved = false;
     
+    // 표준 출력 처리
     pythonProcess.stdout.on('data', (data) => {
       stdout += data.toString();
     });
     
+    // 표준 에러 처리 (로그용)
     pythonProcess.stderr.on('data', (data) => {
       stderr += data.toString();
-      console.log(`🐍 Python stderr: ${data.toString()}`); // 디버깅용
+      console.log(`🐍 Python stderr: ${data.toString().trim()}`);
     });
     
+    // 프로세스 종료 처리
     pythonProcess.on('close', (code) => {
+      if (isResolved) return; // 중복 처리 방지
+      isResolved = true;
+      
       console.log(`🐍 Python 프로세스 종료 코드: ${code}`);
-      console.log(`📤 Python stdout: ${stdout}`);
+      console.log(`📤 Python stdout length: ${stdout.length}`);
+      console.log(`📤 Python stderr length: ${stderr.length}`);
       
       if (code !== 0) {
-        console.error(`❌ Python 프로세스 오류: ${stderr}`);
-        reject(new Error(`OCR 스크립트 실행 실패 (코드: ${code}): ${stderr}`));
+        console.error(`❌ Python 프로세스 오류 (코드: ${code}):`, stderr);
+        reject(new Error(`OCR 스크립트 실행 실패 (코드: ${code}): ${stderr || 'Unknown error'}`));
+        return;
+      }
+      
+      if (!stdout.trim()) {
+        reject(new Error('OCR 스크립트에서 출력이 없습니다'));
         return;
       }
       
       try {
-        const result = JSON.parse(stdout);
-        console.log(`✅ OCR 처리 완료:`, result);
+        // JSON 파싱 시도
+        const result = JSON.parse(stdout.trim());
+        console.log(`✅ OCR 처리 완료:`, {
+          success: result.success,
+          hasName: !!result.name,
+          hasContact: !!result.contact,
+          hasEmail: !!result.email,
+          hasOrganization: !!result.organization
+        });
         resolve(result);
       } catch (parseError) {
         console.error(`❌ JSON 파싱 실패: ${parseError.message}`);
-        console.error(`📤 Raw stdout: ${stdout}`);
-        reject(new Error(`OCR 결과 파싱 실패: ${parseError.message}, stdout: ${stdout}`));
+        console.error(`📤 Raw stdout: ${stdout.substring(0, 500)}...`);
+        reject(new Error(`OCR 결과 파싱 실패: ${parseError.message}`));
       }
     });
     
+    // 프로세스 에러 처리
     pythonProcess.on('error', (error) => {
+      if (isResolved) return;
+      isResolved = true;
+      
       console.error(`❌ Python 프로세스 시작 오류: ${error.message}`);
       reject(new Error(`Python 프로세스 오류: ${error.message}`));
+    });
+    
+    // 프로세스 타임아웃 설정 (2분)
+    const timeout = setTimeout(() => {
+      if (!isResolved) {
+        isResolved = true;
+        pythonProcess.kill('SIGTERM');
+        reject(new Error('OCR 처리 타임아웃 (2분)'));
+      }
+    }, 120000);
+    
+    // 프로세스가 끝나면 타임아웃 해제
+    pythonProcess.on('close', () => {
+      clearTimeout(timeout);
     });
   });
 }
 
+// 이미지 URL에서 적절한 파일 확장자 추출
+function getImageExtension(url, contentType = null) {
+  // Content-Type에서 확장자 추출 시도
+  if (contentType) {
+    const typeMap = {
+      'image/jpeg': '.jpg',
+      'image/jpg': '.jpg',
+      'image/png': '.png',
+      'image/gif': '.gif',
+      'image/webp': '.webp',
+      'image/bmp': '.bmp',
+      'image/tiff': '.tiff'
+    };
+    
+    const ext = typeMap[contentType.toLowerCase()];
+    if (ext) return ext;
+  }
+  
+  // URL에서 확장자 추출
+  try {
+    const urlPath = new URL(url).pathname;
+    const ext = path.extname(urlPath).toLowerCase();
+    if (['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff'].includes(ext)) {
+      return ext;
+    }
+  } catch (e) {
+    // URL 파싱 실패 시 무시
+  }
+  
+  // 기본값
+  return '.jpg';
+}
+
+// 임시 파일 정리 함수
+function cleanupTempFile(filePath) {
+  if (filePath && fs.existsSync(filePath)) {
+    try {
+      fs.unlinkSync(filePath);
+      console.log(`🗑️ 임시 파일 삭제됨: ${filePath}`);
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ 임시 파일 삭제 실패: ${filePath}`, error.message);
+      return false;
+    }
+  }
+  return false;
+}
 
 const cardRepository = new CardRepository(MysqlPoolProvider.getPool());
 const questionRepository = new QuestionRepository(MysqlPoolProvider.getPool());
@@ -663,12 +713,15 @@ router.delete('/:cardId', async (req, res) => {
   }
 });
 
-// OCR 처리 후 카드 업데이트 (수정된 버전 - 파일 다운로드 방식)
+// OCR 처리 후 카드 업데이트 라우터 (개선된 버전)
 router.put('/ocr/:cardId', async (req, res) => {
   const cardId = parseInt(req.params.cardId);
   let tempImagePath = null;
+  const startTime = Date.now();
 
   try {
+    console.log(`🚀 카드 ${cardId} OCR 처리 시작`);
+
     // 1. 카드 존재 확인 및 이미지 URL 가져오기
     const existingCard = await cardRepository.getCardById(cardId);
     if (!existingCard) {
@@ -686,7 +739,7 @@ router.put('/ocr/:cardId', async (req, res) => {
       });
     }
 
-    console.log(`🚀 카드 ${cardId} OCR 처리 시작, 이미지: ${existingCard.card_image_url}`);
+    console.log(`📸 처리할 이미지: ${existingCard.card_image_url}`);
 
     // 3. 임시 디렉토리 생성
     const tempDir = path.join(__dirname, '../temp');
@@ -695,110 +748,118 @@ router.put('/ocr/:cardId', async (req, res) => {
       console.log(`📁 임시 디렉토리 생성: ${tempDir}`);
     }
 
-    // 4. 이미지 다운로드
-    const urlParts = existingCard.card_image_url.split('?')[0];
-    const imageExtension = path.extname(urlParts) || '.jpg';
-    tempImagePath = path.join(tempDir, `card_${cardId}_${Date.now()}${imageExtension}`);
+    // 4. 임시 파일 경로 생성 (타임스탬프와 랜덤값으로 중복 방지)
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substring(2, 8);
+    const imageExtension = getImageExtension(existingCard.card_image_url);
+    tempImagePath = path.join(tempDir, `card_${cardId}_${timestamp}_${randomSuffix}${imageExtension}`);
     
-    console.log(`📥 이미지 다운로드 시작: ${existingCard.card_image_url}`);
     console.log(`📁 임시 파일 경로: ${tempImagePath}`);
-    
+
+    // 5. 이미지 다운로드
+    console.log(`📥 이미지 다운로드 시작...`);
     await downloadImage(existingCard.card_image_url, tempImagePath);
-    console.log(`✅ 이미지 다운로드 완료: ${tempImagePath}`);
-
-    // 파일 크기 확인
+    
+    // 다운로드된 파일 정보 확인
     const fileStats = fs.statSync(tempImagePath);
-    console.log(`📊 다운로드된 파일 크기: ${fileStats.size} bytes`);
-
-    // 5. OCR 처리
-    console.log(`🔍 로컬 파일 OCR 처리 시작: ${tempImagePath}`);
-    const ocrResult = await runOCRScriptWithFile(tempImagePath);
-
-    // 6. OCR 결과 확인
-    if (!ocrResult.success) {
-      return res.status(500).json({
-        error: 'OCR processing failed',
-        details: ocrResult.error,
-        success: false
-      });
+    console.log(`📊 다운로드 완료 - 파일 크기: ${fileStats.size} bytes`);
+    
+    if (fileStats.size === 0) {
+      throw new Error('다운로드된 파일이 비어있습니다');
     }
 
-    console.log(`✅ OCR 처리 완료:`, ocrResult);
+    // 6. OCR 처리
+    console.log(`🔍 OCR 처리 시작...`);
+    const ocrResult = await runOCRScriptWithFile(tempImagePath);
 
-    // 7. 카드 정보 업데이트 준비
+    // 7. OCR 결과 검증
+    if (!ocrResult.success) {
+      throw new Error(`OCR 처리 실패: ${ocrResult.error || 'Unknown error'}`);
+    }
+
+    console.log(`✅ OCR 처리 완료 - 추출된 정보:`, {
+      name: !!ocrResult.name,
+      contact: !!ocrResult.contact,
+      email: !!ocrResult.email,
+      organization: !!ocrResult.organization,
+      position: !!ocrResult.position,
+      sns_links: !!ocrResult.sns_links
+    });
+
+    // 8. 카드 정보 업데이트 준비 (null 값 필터링)
     const cardUpdateData = {
       name: ocrResult.name || existingCard.name,
       contact: ocrResult.contact || existingCard.contact,
       email: ocrResult.email || existingCard.email,
       organization: ocrResult.organization || existingCard.organization,
       position: ocrResult.position || existingCard.position,
-      introduction: existingCard.introduction, // OCR로는 소개글을 추출하지 않음
-      _private: existingCard.private, // 기존 설정 유지
+      introduction: existingCard.introduction, // 기존 소개글 유지
+      _private: existingCard.private, // 기존 프라이버시 설정 유지
       card_image_url: existingCard.card_image_url, // 기존 이미지 URL 유지
       profile_image_url: existingCard.profile_image_url // 기존 프로필 이미지 유지
     };
 
-    // 8. 데이터베이스 업데이트
-    console.log(`💾 카드 정보 업데이트 시작: ${cardId}`);
+    // 9. 데이터베이스 업데이트
+    console.log(`💾 카드 정보 업데이트 중...`);
     const updateResult = await cardRepository.updateCard(cardId, cardUpdateData);
     
     if (updateResult.affectedRows === 0) {
-      console.warn(`⚠️ 카드 업데이트 실패: ${cardId}`);
-      return res.status(404).json({ 
-        error: 'Card not found during update',
-        success: false 
-      });
+      throw new Error('카드 업데이트 실패 - 카드를 찾을 수 없습니다');
     }
 
-    console.log(`✅ 카드 기본 정보 업데이트 완료: ${cardId}`);
+    console.log(`✅ 카드 기본 정보 업데이트 완료`);
 
-    // 9. SNS 링크 처리 (OCR에서 SNS 정보가 추출된 경우)
+    // 10. SNS 링크 처리 (옵션)
+    let snsProcessed = 0;
     if (ocrResult.sns_links) {
       try {
-        console.log(`🔗 SNS 링크 처리 시작: ${ocrResult.sns_links}`);
+        console.log(`🔗 SNS 링크 처리 시작...`);
         
         // 기존 SNS 링크 삭제
         await snsRepository.deleteSnsByCardId(cardId);
-        console.log(`🗑️ 기존 SNS 링크 삭제 완료: ${cardId}`);
         
-        // 새로운 SNS 링크 추가 (개선된 파싱)
-        const snsText = ocrResult.sns_links.toString();
+        // SNS 정보 파싱 및 저장
+        const snsText = String(ocrResult.sns_links);
         const snsPatterns = [
-          { platform: 'kakao', pattern: /(?:카카오톡?|KakaoTalk|카톡)\s*:?\s*([^\s,\n]+)/i },
-          { platform: 'instagram', pattern: /(?:인스타그램?|Instagram|인스타)\s*:?\s*@?([^\s,\n]+)/i },
+          { platform: 'kakao', pattern: /(?:카카오톡?|KakaoTalk|카톡|kakao)\s*:?\s*([^\s,\n]+)/i },
+          { platform: 'instagram', pattern: /(?:인스타그램?|Instagram|인스타|@)\s*:?\s*@?([^\s,\n]+)/i },
           { platform: 'facebook', pattern: /(?:페이스북?|Facebook|fb)\s*:?\s*([^\s,\n]+)/i },
           { platform: 'twitter', pattern: /(?:트위터?|Twitter|X)\s*:?\s*@?([^\s,\n]+)/i },
           { platform: 'linkedin', pattern: /(?:링크드인|LinkedIn)\s*:?\s*([^\s,\n]+)/i },
           { platform: 'youtube', pattern: /(?:유튜브|YouTube)\s*:?\s*([^\s,\n]+)/i }
         ];
 
-        let snsAdded = 0;
         for (const { platform, pattern } of snsPatterns) {
           const match = snsText.match(pattern);
-          if (match && match[1]) {
+          if (match && match[1] && match[1].trim().length > 0) {
+            const snsUrl = match[1].trim();
             await snsRepository.insertSns({
               platform: platform,
-              url: match[1].trim(),
+              url: snsUrl,
               card_id: cardId
             });
-            console.log(`✅ SNS 링크 추가됨: ${platform} - ${match[1]}`);
-            snsAdded++;
+            console.log(`✅ SNS 링크 추가: ${platform} - ${snsUrl}`);
+            snsProcessed++;
           }
         }
         
-        console.log(`✅ SNS 링크 처리 완료: ${snsAdded}개 추가됨`);
+        console.log(`✅ SNS 링크 처리 완료: ${snsProcessed}개 추가`);
       } catch (snsError) {
-        console.warn('⚠️ SNS 링크 처리 중 오류:', snsError);
-        // SNS 처리 실패해도 메인 프로세스는 계속 진행
+        console.warn('⚠️ SNS 링크 처리 중 오류 (메인 프로세스는 계속):', snsError.message);
       }
     }
 
-    // 10. 성공 응답
+    // 11. 처리 시간 계산
+    const processingTime = Date.now() - startTime;
+    console.log(`🎉 전체 OCR 처리 완료 - 소요시간: ${processingTime}ms`);
+
+    // 12. 성공 응답
     res.status(200).json({
       success: true,
       message: 'Card updated successfully with OCR data',
       data: {
         cardId: cardId,
+        processingTimeMs: processingTime,
         extractedData: {
           name: ocrResult.name,
           contact: ocrResult.contact,
@@ -807,55 +868,64 @@ router.put('/ocr/:cardId', async (req, res) => {
           position: ocrResult.position,
           sns_links: ocrResult.sns_links
         },
-        updatedCard: cardUpdateData,
-        processingMethod: 'file_download',
-        fileProcessed: tempImagePath
+        updatedFields: {
+          name: !!ocrResult.name,
+          contact: !!ocrResult.contact,
+          email: !!ocrResult.email,
+          organization: !!ocrResult.organization,
+          position: !!ocrResult.position
+        },
+        snsLinksProcessed: snsProcessed,
+        processingMethod: 'local_file_download'
       }
     });
-
-    console.log(`🎉 OCR 처리 및 카드 업데이트 완료: ${cardId}`);
 
   } catch (error) {
     console.error('❌ OCR 처리 중 오류:', error);
     
-    // 에러 타입별 응답
+    // 에러 타입별 상세 응답
+    let statusCode = 500;
+    let errorType = 'internal_error';
+    
     if (error.message.includes('download') || error.message.includes('Network')) {
-      return res.status(400).json({
-        error: 'Failed to download card image',
-        details: error.message,
-        success: false
-      });
-    } else if (error.message.includes('OCR') || error.message.includes('스크립트')) {
-      return res.status(500).json({
-        error: 'OCR processing failed',
-        details: error.message,
-        success: false
-      });
-    } else if (error.message.includes('파싱')) {
-      return res.status(500).json({
-        error: 'OCR result parsing failed',
-        details: error.message,
-        success: false
-      });
-    } else {
-      return res.status(500).json({
-        error: 'Internal server error during OCR processing',
-        details: error.message,
-        success: false
-      });
+      statusCode = 400;
+      errorType = 'download_error';
+    } else if (error.message.includes('OCR') || error.message.includes('Python')) {
+      statusCode = 500;
+      errorType = 'ocr_processing_error';
+    } else if (error.message.includes('파싱') || error.message.includes('JSON')) {
+      statusCode = 500;
+      errorType = 'result_parsing_error';
+    } else if (error.message.includes('timeout') || error.message.includes('타임아웃')) {
+      statusCode = 408;
+      errorType = 'timeout_error';
     }
+    
+    return res.status(statusCode).json({
+      success: false,
+      error: error.message,
+      errorType: errorType,
+      cardId: cardId,
+      processingTimeMs: Date.now() - startTime
+    });
+    
   } finally {
-    // 11. 임시 파일 정리
-    if (tempImagePath && fs.existsSync(tempImagePath)) {
-      try {
-        fs.unlinkSync(tempImagePath);
-        console.log(`🗑️ 임시 파일 삭제됨: ${tempImagePath}`);
-      } catch (cleanupError) {
-        console.warn('⚠️ 임시 파일 삭제 실패:', cleanupError);
-      }
+    // 13. 임시 파일 정리 (항상 실행)
+    if (tempImagePath) {
+      setTimeout(() => {
+        cleanupTempFile(tempImagePath);
+      }, 1000); // 1초 후 정리 (응답 완료 후)
     }
   }
 });
+
+module.exports = {
+  downloadImage,
+  runOCRScriptWithFile,
+  getVenvPythonPath,
+  getImageExtension,
+  cleanupTempFile
+};
 
 // 새로운 엔드포인트: 이미지 URL로 직접 OCR 처리 (테스트용) - 수정된 버전
 router.post('/ocr-test', async (req, res) => {
