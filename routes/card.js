@@ -102,8 +102,46 @@ async function downloadImage(url, filepath) {
   });
 }
 
-// Python OCR 스크립트 실행 함수
-async function runOCRScript(imagePath) {
+// Python OCR 스크립트 실행 함수 (URL 직접 처리 버전)
+async function runOCRScriptWithURL(imageUrl) {
+  return new Promise((resolve, reject) => {
+    const pythonScript = path.join(__dirname, '../ocr_with_llm.py');
+    
+    const pythonProcess = spawn('python3', [pythonScript, imageUrl]);
+    
+    let stdout = '';
+    let stderr = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`OCR 스크립트 실행 실패: ${stderr}`));
+        return;
+      }
+      
+      try {
+        const result = JSON.parse(stdout);
+        resolve(result);
+      } catch (parseError) {
+        reject(new Error(`OCR 결과 파싱 실패: ${parseError.message}, stdout: ${stdout}`));
+      }
+    });
+    
+    pythonProcess.on('error', (error) => {
+      reject(new Error(`Python 프로세스 오류: ${error.message}`));
+    });
+  });
+}
+
+// Python OCR 스크립트 실행 함수 (로컬 파일 처리 버전)
+async function runOCRScriptWithFile(imagePath) {
   return new Promise((resolve, reject) => {
     const pythonScript = path.join(__dirname, '../ocr_with_llm.py');
     
@@ -130,7 +168,7 @@ async function runOCRScript(imagePath) {
         const result = JSON.parse(stdout);
         resolve(result);
       } catch (parseError) {
-        reject(new Error(`OCR 결과 파싱 실패: ${parseError.message}`));
+        reject(new Error(`OCR 결과 파싱 실패: ${parseError.message}, stdout: ${stdout}`));
       }
     });
     
@@ -406,10 +444,11 @@ router.delete('/:cardId', async (req, res) => {
   }
 });
 
-// OCR 처리 후 카드 업데이트
+// OCR 처리 후 카드 업데이트 (개선된 버전)
 router.put('/ocr/:cardId', async (req, res) => {
   const cardId = parseInt(req.params.cardId);
   let tempImagePath = null;
+  const useDirectURL = req.body.useDirectURL || false; // URL 직접 처리 옵션
 
   try {
     // 1. 카드 존재 확인 및 이미지 URL 가져오기
@@ -429,24 +468,35 @@ router.put('/ocr/:cardId', async (req, res) => {
       });
     }
 
-    // 3. 임시 디렉토리 생성
-    const tempDir = path.join(__dirname, '../temp');
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true });
+    console.log(`Starting OCR for card ${cardId} with image: ${existingCard.card_image_url}`);
+
+    let ocrResult;
+
+    if (useDirectURL) {
+      // 3-A. URL 직접 처리 방식
+      console.log(`Processing OCR directly from URL: ${existingCard.card_image_url}`);
+      ocrResult = await runOCRScriptWithURL(existingCard.card_image_url);
+    } else {
+      // 3-B. 파일 다운로드 후 처리 방식 (기존 방식)
+      // 임시 디렉토리 생성
+      const tempDir = path.join(__dirname, '../temp');
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
+      }
+
+      // 이미지 다운로드
+      const imageExtension = path.extname(existingCard.card_image_url) || '.jpg';
+      tempImagePath = path.join(tempDir, `card_${cardId}_${Date.now()}${imageExtension}`);
+      
+      console.log(`Downloading image from: ${existingCard.card_image_url}`);
+      await downloadImage(existingCard.card_image_url, tempImagePath);
+
+      // OCR 처리
+      console.log(`Running OCR on local file: ${tempImagePath}`);
+      ocrResult = await runOCRScriptWithFile(tempImagePath);
     }
 
-    // 4. 이미지 다운로드
-    const imageExtension = path.extname(existingCard.card_image_url) || '.jpg';
-    tempImagePath = path.join(tempDir, `card_${cardId}_${Date.now()}${imageExtension}`);
-    
-    console.log(`Downloading image from: ${existingCard.card_image_url}`);
-    await downloadImage(existingCard.card_image_url, tempImagePath);
-
-    // 5. OCR 처리
-    console.log(`Running OCR on: ${tempImagePath}`);
-    const ocrResult = await runOCRScript(tempImagePath);
-
-    // 6. OCR 결과 확인
+    // 4. OCR 결과 확인
     if (!ocrResult.success) {
       return res.status(500).json({
         error: 'OCR processing failed',
@@ -455,7 +505,7 @@ router.put('/ocr/:cardId', async (req, res) => {
       });
     }
 
-    // 7. 카드 정보 업데이트 준비
+    // 5. 카드 정보 업데이트 준비
     const cardUpdateData = {
       name: ocrResult.name || existingCard.name,
       contact: ocrResult.contact || existingCard.contact,
@@ -468,7 +518,7 @@ router.put('/ocr/:cardId', async (req, res) => {
       profile_image_url: existingCard.profile_image_url // 기존 프로필 이미지 유지
     };
 
-    // 8. 데이터베이스 업데이트
+    // 6. 데이터베이스 업데이트
     const updateResult = await cardRepository.updateCard(cardId, cardUpdateData);
     
     if (updateResult.affectedRows === 0) {
@@ -478,29 +528,32 @@ router.put('/ocr/:cardId', async (req, res) => {
       });
     }
 
-    // 9. SNS 링크 처리 (OCR에서 SNS 정보가 추출된 경우)
+    // 7. SNS 링크 처리 (OCR에서 SNS 정보가 추출된 경우)
     if (ocrResult.sns_links) {
       try {
         // 기존 SNS 링크 삭제
         await snsRepository.deleteSnsByCardId(cardId);
         
-        // 새로운 SNS 링크 추가 (간단한 파싱)
+        // 새로운 SNS 링크 추가 (개선된 파싱)
         const snsText = ocrResult.sns_links.toString();
         const snsPatterns = [
-          { platform: 'kakao', pattern: /카카오톡?\s*:?\s*([^\s,]+)/i },
-          { platform: 'instagram', pattern: /인스타그램?\s*:?\s*@?([^\s,]+)/i },
-          { platform: 'facebook', pattern: /페이스북?\s*:?\s*([^\s,]+)/i },
-          { platform: 'twitter', pattern: /트위터?\s*:?\s*@?([^\s,]+)/i }
+          { platform: 'kakao', pattern: /(?:카카오톡?|KakaoTalk|카톡)\s*:?\s*([^\s,\n]+)/i },
+          { platform: 'instagram', pattern: /(?:인스타그램?|Instagram|인스타)\s*:?\s*@?([^\s,\n]+)/i },
+          { platform: 'facebook', pattern: /(?:페이스북?|Facebook|fb)\s*:?\s*([^\s,\n]+)/i },
+          { platform: 'twitter', pattern: /(?:트위터?|Twitter|X)\s*:?\s*@?([^\s,\n]+)/i },
+          { platform: 'linkedin', pattern: /(?:링크드인|LinkedIn)\s*:?\s*([^\s,\n]+)/i },
+          { platform: 'youtube', pattern: /(?:유튜브|YouTube)\s*:?\s*([^\s,\n]+)/i }
         ];
 
         for (const { platform, pattern } of snsPatterns) {
           const match = snsText.match(pattern);
-          if (match) {
+          if (match && match[1]) {
             await snsRepository.insertSns({
               platform: platform,
-              url: match[1],
+              url: match[1].trim(),
               card_id: cardId
             });
+            console.log(`SNS 링크 추가됨: ${platform} - ${match[1]}`);
           }
         }
       } catch (snsError) {
@@ -509,7 +562,7 @@ router.put('/ocr/:cardId', async (req, res) => {
       }
     }
 
-    // 10. 성공 응답
+    // 8. 성공 응답
     res.status(200).json({
       success: true,
       message: 'Card updated successfully with OCR data',
@@ -523,7 +576,8 @@ router.put('/ocr/:cardId', async (req, res) => {
           position: ocrResult.position,
           sns_links: ocrResult.sns_links
         },
-        updatedCard: cardUpdateData
+        updatedCard: cardUpdateData,
+        processingMethod: useDirectURL ? 'direct_url' : 'file_download'
       }
     });
 
@@ -537,9 +591,15 @@ router.put('/ocr/:cardId', async (req, res) => {
         details: error.message,
         success: false
       });
-    } else if (error.message.includes('OCR')) {
+    } else if (error.message.includes('OCR') || error.message.includes('스크립트')) {
       return res.status(500).json({
         error: 'OCR processing failed',
+        details: error.message,
+        success: false
+      });
+    } else if (error.message.includes('파싱')) {
+      return res.status(500).json({
+        error: 'OCR result parsing failed',
         details: error.message,
         success: false
       });
@@ -551,7 +611,7 @@ router.put('/ocr/:cardId', async (req, res) => {
       });
     }
   } finally {
-    // 11. 임시 파일 정리
+    // 9. 임시 파일 정리
     if (tempImagePath && fs.existsSync(tempImagePath)) {
       try {
         fs.unlinkSync(tempImagePath);
@@ -560,6 +620,56 @@ router.put('/ocr/:cardId', async (req, res) => {
         console.warn('임시 파일 삭제 실패:', cleanupError);
       }
     }
+  }
+});
+
+// 새로운 엔드포인트: 이미지 URL로 직접 OCR 처리 (테스트용)
+router.post('/ocr-test', async (req, res) => {
+  const { imageUrl } = req.body;
+
+  if (!imageUrl) {
+    return res.status(400).json({
+      error: 'imageUrl is required',
+      success: false
+    });
+  }
+
+  try {
+    console.log(`Testing OCR with URL: ${imageUrl}`);
+    const ocrResult = await runOCRScriptWithURL(imageUrl);
+
+    if (!ocrResult.success) {
+      return res.status(500).json({
+        error: 'OCR processing failed',
+        details: ocrResult.error,
+        success: false
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'OCR test completed successfully',
+      data: {
+        extractedData: {
+          name: ocrResult.name,
+          contact: ocrResult.contact,
+          email: ocrResult.email,
+          organization: ocrResult.organization,
+          position: ocrResult.position,
+          sns_links: ocrResult.sns_links
+        },
+        extractedText: ocrResult.extracted_text // 디버깅용
+      }
+    });
+
+    
+  } catch (error) {
+    console.error('OCR 테스트 중 오류:', error);
+    res.status(500).json({
+      error: 'OCR test failed',
+      details: error.message,
+      success: false
+    });
   }
 });
 
