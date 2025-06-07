@@ -9,7 +9,7 @@ class CardRepository {
   async insertCard(card) {
     const connection = await this.pool.getConnection();
     try {
-      const query = `INSERT INTO Card (name, contact, email, organization, position, introduction, user_id, private, card_image_url, profile_image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+      const query = `INSERT INTO Card (name, contact, email, organization, position, introduction, user_id, private, card_image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
       const [result] = await connection.execute(query, [
         card.name,
         card.contact,
@@ -20,7 +20,7 @@ class CardRepository {
         card.user_id,
         +card._private,
         card.card_image_url || null,
-        card.profile_image_url || null,
+        //card.profile_image_url || null,
       ]);
       return result;
     } catch (err) {
@@ -34,7 +34,7 @@ class CardRepository {
   async updateCard(cardId, card) {
     const connection = await this.pool.getConnection();
     try {
-      const query = `UPDATE Card SET name = ?, contact = ?, email = ?, organization = ?, position = ?, introduction = ?, private = ?, card_image_url = ?, profile_image_url = ? WHERE id = ?`;
+      const query = `UPDATE Card SET name = ?, contact = ?, email = ?, organization = ?, position = ?, introduction = ?, private = ?, WHERE id = ?`;
       const [result] = await connection.execute(query, [
         card.name,
         card.contact,
@@ -43,8 +43,8 @@ class CardRepository {
         card.position,
         card.introduction,
         +card._private,
-        card.card_image_url,
-        card.profile_image_url,
+        //card.card_image_url,
+        //card.profile_image_url,
         cardId,
       ]);
       return result;
