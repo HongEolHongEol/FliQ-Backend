@@ -919,14 +919,6 @@ router.put('/ocr/:cardId', async (req, res) => {
   }
 });
 
-module.exports = {
-  downloadImage,
-  runOCRScriptWithFile,
-  getVenvPythonPath,
-  getImageExtension,
-  cleanupTempFile
-};
-
 // 새로운 엔드포인트: 이미지 URL로 직접 OCR 처리 (테스트용) - 수정된 버전
 router.post('/ocr-test', async (req, res) => {
   const { imageUrl } = req.body;
