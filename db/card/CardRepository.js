@@ -135,6 +135,20 @@ class CardRepository {
     }
   }
 
+  async updateCardImage(cardId, cardImageUrl) {
+  const connection = await this.pool.getConnection();
+  try {
+    const query = `UPDATE Card SET card_image_url = ? WHERE id = ?`;
+    const [result] = await connection.execute(query, [cardImageUrl, cardId]);
+    return result;
+  } catch (err) {
+    console.error('Error executing query:', err);
+    throw err;
+  } finally {
+    connection.release();
+  }
+}
+
   async searchCards(searchTerm, userId = null) {
     const connection = await this.pool.getConnection();
     try {

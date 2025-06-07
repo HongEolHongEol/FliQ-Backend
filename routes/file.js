@@ -56,7 +56,6 @@ async function uploadToS3(file, folder = 'general') {
     Key: key,
     Body: file.buffer,
     ContentType: file.mimetype,
-    ACL: 'public-read',
   };
 
   const upload = new Upload({
@@ -119,7 +118,6 @@ router.post('/upload-profile', upload.single('profileImage'), async (req, res) =
     const uploadResult = await uploadToS3(file, `profiles/${userId}`);
 
     // 데이터베이스에 프로필 이미지 URL 업데이트
-    // UserRepository에 updateProfileImage 메서드가 필요합니다
     await userRepository.updateProfileImage(parseInt(userId), uploadResult.location);
 
     const profileData = {
@@ -138,6 +136,78 @@ router.post('/upload-profile', upload.single('profileImage'), async (req, res) =
     });
   } catch (error) {
     console.error('Error uploading profile image:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// 카드 이미지 업로드 (카드 ID와 연동)
+router.post('/upload-card-image', upload.single('cardImage'), async (req, res) => {
+  try {
+    const file = req.file;
+    const { cardId } = req.body;
+    
+    if (!file) {
+      return res.status(400).json({ error: 'No card image uploaded' });
+    }
+
+    if (!cardId) {
+      return res.status(400).json({ error: 'Card ID is required' });
+    }
+
+    // 카드 존재 확인
+    const existingCard = await cardRepository.getCardById(parseInt(cardId));
+    if (!existingCard) {
+      return res.status(404).json({ error: 'Card not found' });
+    }
+
+    // 이미지 파일인지 확인
+    if (!file.mimetype.startsWith('image/')) {
+      return res.status(400).json({ error: 'Only image files are allowed for card image' });
+    }
+
+    // 기존 카드 이미지가 있다면 S3에서 삭제
+    if (existingCard.card_image_url) {
+      try {
+        const oldUrl = new URL(existingCard.card_image_url);
+        const oldKey = oldUrl.pathname.substring(1);
+        
+        const deleteCommand = new DeleteObjectCommand({
+          Bucket: process.env.S3_BUCKET_NAME,
+          Key: oldKey
+        });
+        
+        await s3Client.send(deleteCommand);
+      } catch (deleteError) {
+        console.warn('Failed to delete old card image:', deleteError);
+        // 기존 이미지 삭제 실패해도 새 이미지 업로드는 계속 진행
+      }
+    }
+
+    // 새 카드 이미지 업로드
+    const uploadResult = await uploadToS3(file, `cards/${cardId}`);
+
+    // 데이터베이스에 카드 이미지 URL 업데이트
+    await cardRepository.updateCardImage(parseInt(cardId), uploadResult.location);
+
+    const cardImageData = {
+      cardId: parseInt(cardId),
+      filename: file.originalname,
+      url: uploadResult.location,
+      size: file.size,
+      mimetype: file.mimetype,
+      uploaded_at: new Date()
+    };
+
+    res.status(200).json({ 
+      success: true,
+      data: cardImageData,
+      message: 'Card image uploaded successfully'
+    });
+  } catch (error) {
+    console.error('Error uploading card image:', error);
     res.status(500).json({ 
       error: 'Internal server error',
       message: error.message 
