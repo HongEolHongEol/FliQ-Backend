@@ -147,21 +147,53 @@ def process_business_card(image_path):
     except Exception as e:
         return {"error": str(e), "success": False}
 
+def main():
+    """메인 함수 - 환경 변수 설정 및 실행"""
+    try:
+        # 환경 변수에서 Google Vision API 키 파일 경로 가져오기
+        credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+        
+        if not credentials_path:
+            print(json.dumps({"error": "GOOGLE_APPLICATION_CREDENTIALS 환경변수가 설정되지 않았습니다", "success": False}, ensure_ascii=False))
+            sys.exit(1)
+        
+        # 상대 경로를 절대 경로로 변환
+        if not os.path.isabs(credentials_path):
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            project_root = os.path.dirname(script_dir)  # AI 폴더의 상위 디렉토리
+            credentials_path = os.path.join(project_root, credentials_path)
+        
+        # 키 파일 존재 확인
+        if not os.path.exists(credentials_path):
+            print(json.dumps({"error": f"Google Vision API 키 파일을 찾을 수 없습니다: {credentials_path}", "success": False}, ensure_ascii=False))
+            sys.exit(1)
+        
+        # 환경 변수에 절대 경로 설정
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
+        
+        # GROQ API 키 확인
+        if not os.environ.get("GROQ_API_KEY"):
+            print(json.dumps({"error": "GROQ_API_KEY 환경변수가 설정되지 않았습니다", "success": False}, ensure_ascii=False))
+            sys.exit(1)
+        
+        # 명령행 인수 확인
+        if len(sys.argv) != 2:
+            print(json.dumps({"error": "이미지 경로가 필요합니다", "success": False}, ensure_ascii=False))
+            sys.exit(1)
+        
+        image_path = sys.argv[1]
+        
+        if not os.path.exists(image_path):
+            print(json.dumps({"error": "이미지 파일이 존재하지 않습니다", "success": False}, ensure_ascii=False))
+            sys.exit(1)
+        
+        # OCR 처리 실행
+        result = process_business_card(image_path)
+        print(json.dumps(result, ensure_ascii=False))
+        
+    except Exception as e:
+        print(json.dumps({"error": f"실행 중 오류: {str(e)}", "success": False}, ensure_ascii=False))
+        sys.exit(1)
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print(json.dumps({"error": "이미지 경로가 필요합니다", "success": False}))
-        sys.exit(1)
-    
-    image_path = sys.argv[1]
-    
-    if not os.path.exists(image_path):
-        print(json.dumps({"error": "이미지 파일이 존재하지 않습니다", "success": False}))
-        sys.exit(1)
-    
-    # 환경변수 설정 확인
-    if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
-        print(json.dumps({"error": "GOOGLE_APPLICATION_CREDENTIALS 환경변수가 설정되지 않았습니다", "success": False}))
-        sys.exit(1)
-    
-    result = process_business_card(image_path)
-    print(json.dumps(result, ensure_ascii=False))
+    main()
