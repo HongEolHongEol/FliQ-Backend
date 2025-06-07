@@ -20,6 +20,7 @@ import http from 'http';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const router = Router();
+const pythonPath = '/usr/bin/python3';
 
 // AWS S3 클라이언트 설정
 const s3Client = new S3Client({
