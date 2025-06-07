@@ -713,7 +713,7 @@ router.delete('/:cardId', async (req, res) => {
   }
 });
 
-// OCR 처리 후 카드 업데이트 라우터 (개선된 버전)
+// OCR 처리 후 카드 업데이트 라우터
 router.put('/ocr/:cardId', async (req, res) => {
   const cardId = parseInt(req.params.cardId);
   let tempImagePath = null;
@@ -919,55 +919,6 @@ router.put('/ocr/:cardId', async (req, res) => {
   }
 });
 
-// 새로운 엔드포인트: 이미지 URL로 직접 OCR 처리 (테스트용) - 수정된 버전
-router.post('/ocr-test', async (req, res) => {
-  const { imageUrl } = req.body;
-
-  if (!imageUrl) {
-    return res.status(400).json({
-      error: 'imageUrl is required',
-      success: false
-    });
-  }
-
-  try {
-    console.log(`🧪 OCR 테스트 시작, URL: ${imageUrl}`);
-    const ocrResult = await runOCRScriptWithURL(imageUrl);
-
-    if (!ocrResult.success) {
-      return res.status(500).json({
-        error: 'OCR processing failed',
-        details: ocrResult.error,
-        success: false
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'OCR test completed successfully',
-      data: {
-        extractedData: {
-          name: ocrResult.name,
-          contact: ocrResult.contact,
-          email: ocrResult.email,
-          organization: ocrResult.organization,
-          position: ocrResult.position,
-          sns_links: ocrResult.sns_links
-        },
-        extractedText: ocrResult.extracted_text // 디버깅용
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ OCR 테스트 중 오류:', error);
-    res.status(500).json({
-      error: 'OCR test failed',
-      details: error.message,
-      success: false
-    });
-  }
-});
-
 // 카드 상세 조회 (질문, SNS, 태그 포함)
 router.get('/:cardId', async (req, res) => {
   try {
@@ -1151,56 +1102,6 @@ router.get('/shared-link/:shareToken', async (req, res) => {
       .json({ error: 'Internal server error', message: error.message });
   }
 });
-
-// 이미지 업로드 (프로필, 명함 사진)
-router.post(
-  '/upload-image',
-  upload.fields([
-    { name: 'profile_image', maxCount: 1 },
-    { name: 'card_image', maxCount: 1 },
-  ]),
-  async (req, res) => {
-    try {
-      const files = req.files;
-      if (!files || Object.keys(files).length === 0) {
-        return res.status(400).json({ error: 'No files uploaded' });
-      }
-
-      const result = {};
-
-      if (files.profile_image) {
-        const uploadResult = await uploadImageToS3(
-          files.profile_image[0],
-          'profile',
-          req.body.id
-        );
-        result.profile_image_url = uploadResult.location;
-      }
-
-      if (files.card_image) {
-        const uploadResult = await uploadImageToS3(
-          files.card_image[0],
-          'card',
-          req.body.id
-        );
-        result.card_image_url = uploadResult.location;
-      }
-
-      res
-        .status(200)
-        .json({
-          success: true,
-          data: result,
-          message: 'Images uploaded successfully',
-        });
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      res
-        .status(500)
-        .json({ error: 'Internal server error', message: error.message });
-    }
-  }
-);
 
 // 태그별 카드 조회
 router.get('/tag/:tagId/:userId', async (req, res) => {
