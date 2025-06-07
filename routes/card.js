@@ -9,7 +9,16 @@ import multer from 'multer';
 import { S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { v4 as uuidv4 } from 'uuid';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import https from 'https';
+import http from 'http';
 
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const router = Router();
 
 // AWS S3 클라이언트 설정
@@ -61,6 +70,75 @@ async function uploadImageToS3(file, folder = 'card', id = null) {
     bucket: process.env.S3_BUCKET_NAME,
   };
 }
+
+// 이미지 다운로드 함수
+async function downloadImage(url, filepath) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https') ? https : http;
+    
+    const file = fs.createWriteStream(filepath);
+    
+    protocol.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`Failed to download image: ${response.statusCode}`));
+        return;
+      }
+      
+      response.pipe(file);
+      
+      file.on('finish', () => {
+        file.close();
+        resolve(filepath);
+      });
+      
+      file.on('error', (err) => {
+        fs.unlink(filepath, () => {}); // 실패시 파일 삭제
+        reject(err);
+      });
+    }).on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+// Python OCR 스크립트 실행 함수
+async function runOCRScript(imagePath) {
+  return new Promise((resolve, reject) => {
+    const pythonScript = path.join(__dirname, '../ocr_with_llm.py');
+    
+    const pythonProcess = spawn('python3', [pythonScript, imagePath]);
+    
+    let stdout = '';
+    let stderr = '';
+    
+    pythonProcess.stdout.on('data', (data) => {
+      stdout += data.toString();
+    });
+    
+    pythonProcess.stderr.on('data', (data) => {
+      stderr += data.toString();
+    });
+    
+    pythonProcess.on('close', (code) => {
+      if (code !== 0) {
+        reject(new Error(`OCR 스크립트 실행 실패: ${stderr}`));
+        return;
+      }
+      
+      try {
+        const result = JSON.parse(stdout);
+        resolve(result);
+      } catch (parseError) {
+        reject(new Error(`OCR 결과 파싱 실패: ${parseError.message}`));
+      }
+    });
+    
+    pythonProcess.on('error', (error) => {
+      reject(new Error(`Python 프로세스 오류: ${error.message}`));
+    });
+  });
+}
+
 
 const cardRepository = new CardRepository(MysqlPoolProvider.getPool());
 const questionRepository = new QuestionRepository(MysqlPoolProvider.getPool());
@@ -324,6 +402,163 @@ router.delete('/:cardId', async (req, res) => {
       .json({ error: 'Internal server error', message: error.message });
   } finally {
     connection.release();
+  }
+});
+
+// OCR 처리 후 카드 업데이트
+router.put('/ocr/:cardId', async (req, res) => {
+  const cardId = parseInt(req.params.cardId);
+  let tempImagePath = null;
+
+  try {
+    // 1. 카드 존재 확인 및 이미지 URL 가져오기
+    const existingCard = await cardRepository.getCardById(cardId);
+    if (!existingCard) {
+      return res.status(404).json({ 
+        error: 'Card not found',
+        success: false 
+      });
+    }
+
+    // 2. 카드 이미지 URL 확인
+    if (!existingCard.card_image_url) {
+      return res.status(400).json({ 
+        error: 'No card image found for OCR processing',
+        success: false 
+      });
+    }
+
+    // 3. 임시 디렉토리 생성
+    const tempDir = path.join(__dirname, '../temp');
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    // 4. 이미지 다운로드
+    const imageExtension = path.extname(existingCard.card_image_url) || '.jpg';
+    tempImagePath = path.join(tempDir, `card_${cardId}_${Date.now()}${imageExtension}`);
+    
+    console.log(`Downloading image from: ${existingCard.card_image_url}`);
+    await downloadImage(existingCard.card_image_url, tempImagePath);
+
+    // 5. OCR 처리
+    console.log(`Running OCR on: ${tempImagePath}`);
+    const ocrResult = await runOCRScript(tempImagePath);
+
+    // 6. OCR 결과 확인
+    if (!ocrResult.success) {
+      return res.status(500).json({
+        error: 'OCR processing failed',
+        details: ocrResult.error,
+        success: false
+      });
+    }
+
+    // 7. 카드 정보 업데이트 준비
+    const cardUpdateData = {
+      name: ocrResult.name || existingCard.name,
+      contact: ocrResult.contact || existingCard.contact,
+      email: ocrResult.email || existingCard.email,
+      organization: ocrResult.organization || existingCard.organization,
+      position: ocrResult.position || existingCard.position,
+      introduction: existingCard.introduction, // OCR로는 소개글을 추출하지 않음
+      _private: existingCard.private, // 기존 설정 유지
+      card_image_url: existingCard.card_image_url, // 기존 이미지 URL 유지
+      profile_image_url: existingCard.profile_image_url // 기존 프로필 이미지 유지
+    };
+
+    // 8. 데이터베이스 업데이트
+    const updateResult = await cardRepository.updateCard(cardId, cardUpdateData);
+    
+    if (updateResult.affectedRows === 0) {
+      return res.status(404).json({ 
+        error: 'Card not found during update',
+        success: false 
+      });
+    }
+
+    // 9. SNS 링크 처리 (OCR에서 SNS 정보가 추출된 경우)
+    if (ocrResult.sns_links) {
+      try {
+        // 기존 SNS 링크 삭제
+        await snsRepository.deleteSnsByCardId(cardId);
+        
+        // 새로운 SNS 링크 추가 (간단한 파싱)
+        const snsText = ocrResult.sns_links.toString();
+        const snsPatterns = [
+          { platform: 'kakao', pattern: /카카오톡?\s*:?\s*([^\s,]+)/i },
+          { platform: 'instagram', pattern: /인스타그램?\s*:?\s*@?([^\s,]+)/i },
+          { platform: 'facebook', pattern: /페이스북?\s*:?\s*([^\s,]+)/i },
+          { platform: 'twitter', pattern: /트위터?\s*:?\s*@?([^\s,]+)/i }
+        ];
+
+        for (const { platform, pattern } of snsPatterns) {
+          const match = snsText.match(pattern);
+          if (match) {
+            await snsRepository.insertSns({
+              platform: platform,
+              url: match[1],
+              card_id: cardId
+            });
+          }
+        }
+      } catch (snsError) {
+        console.warn('SNS 링크 처리 중 오류:', snsError);
+        // SNS 처리 실패해도 메인 프로세스는 계속 진행
+      }
+    }
+
+    // 10. 성공 응답
+    res.status(200).json({
+      success: true,
+      message: 'Card updated successfully with OCR data',
+      data: {
+        cardId: cardId,
+        extractedData: {
+          name: ocrResult.name,
+          contact: ocrResult.contact,
+          email: ocrResult.email,
+          organization: ocrResult.organization,
+          position: ocrResult.position,
+          sns_links: ocrResult.sns_links
+        },
+        updatedCard: cardUpdateData
+      }
+    });
+
+  } catch (error) {
+    console.error('OCR 처리 중 오류:', error);
+    
+    // 에러 타입별 응답
+    if (error.message.includes('download')) {
+      return res.status(400).json({
+        error: 'Failed to download card image',
+        details: error.message,
+        success: false
+      });
+    } else if (error.message.includes('OCR')) {
+      return res.status(500).json({
+        error: 'OCR processing failed',
+        details: error.message,
+        success: false
+      });
+    } else {
+      return res.status(500).json({
+        error: 'Internal server error during OCR processing',
+        details: error.message,
+        success: false
+      });
+    }
+  } finally {
+    // 11. 임시 파일 정리
+    if (tempImagePath && fs.existsSync(tempImagePath)) {
+      try {
+        fs.unlinkSync(tempImagePath);
+        console.log(`Temporary file deleted: ${tempImagePath}`);
+      } catch (cleanupError) {
+        console.warn('임시 파일 삭제 실패:', cleanupError);
+      }
+    }
   }
 });
 
