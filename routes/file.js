@@ -5,12 +5,14 @@ import { Upload } from '@aws-sdk/lib-storage';
 import { v4 as uuidv4 } from 'uuid';
 import dotenv from 'dotenv';
 import UserRepository from '../db/user/UserRepository.js';
+import CardRepository from '../db/card/CardRepository.js';
 import MysqlPoolProvider from '../db/provider.js';
 
 dotenv.config();
 
 const router = Router();
 const userRepository = new UserRepository(MysqlPoolProvider.getPool());
+const cardRepository = new CardRepository(MysqlPoolProvider.getPool());
 
 // AWS S3 클라이언트 설정
 const s3Client = new S3Client({
