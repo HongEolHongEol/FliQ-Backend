@@ -6,12 +6,48 @@ import requests
 from google.cloud import vision
 from google.protobuf.json_format import MessageToDict
 
+def load_env_file():
+    """프로젝트 루트의 .env 파일에서 환경변수 로드"""
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(script_dir)  # AI 폴더의 상위 디렉토리
+        env_path = os.path.join(project_root, '.env')
+        
+        print(f"🔍 .env 파일 경로: {env_path}", file=sys.stderr)
+        
+        if os.path.exists(env_path):
+            with open(env_path, 'r', encoding='utf-8') as f:
+                for line_num, line in enumerate(f, 1):
+                    line = line.strip()
+                    if line and not line.startswith('#') and '=' in line:
+                        key, value = line.split('=', 1)
+                        key = key.strip()
+                        value = value.strip()
+                        
+                        # 따옴표 제거
+                        if (value.startswith('"') and value.endswith('"')) or \
+                           (value.startswith("'") and value.endswith("'")):
+                            value = value[1:-1]
+                        
+                        os.environ[key] = value
+                        print(f"✅ 환경변수 설정: {key}={value[:10]}{'...' if len(value) > 10 else ''}", file=sys.stderr)
+                        
+            print(f"✅ .env 파일 로드 완료: {env_path}", file=sys.stderr)
+        else:
+            print(f"⚠️ .env 파일을 찾을 수 없습니다: {env_path}", file=sys.stderr)
+            
+    except Exception as e:
+        print(f"⚠️ .env 파일 로드 중 오류: {str(e)}", file=sys.stderr)
+
 def classify_business_card_info(text):
     """Groq API를 통한 데이터 분류"""
     api_key = os.environ.get("GROQ_API_KEY", "")
     if not api_key:
         print("⚠️ GROQ_API_KEY 환경변수가 설정되지 않았습니다!", file=sys.stderr)
+        print(f"⚠️ 현재 환경변수들: {list(os.environ.keys())}", file=sys.stderr)
         return {"error": "API 키가 설정되지 않음"}
+    
+    print(f"✅ GROQ API 키 확인됨: {api_key[:10]}...", file=sys.stderr)
         
     endpoint = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -150,6 +186,9 @@ def process_business_card(image_path):
 def main():
     """메인 함수 - 환경 변수 설정 및 실행"""
     try:
+        # .env 파일에서 환경변수 로드
+        load_env_file()
+        
         # 환경 변수에서 Google Vision API 키 파일 경로 가져오기
         credentials_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
         
@@ -172,9 +211,12 @@ def main():
         os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
         
         # GROQ API 키 확인
-        if not os.environ.get("GROQ_API_KEY"):
+        groq_api_key = os.environ.get("GROQ_API_KEY")
+        if not groq_api_key:
             print(json.dumps({"error": "GROQ_API_KEY 환경변수가 설정되지 않았습니다", "success": False}, ensure_ascii=False))
             sys.exit(1)
+        
+        print(f"✅ 환경변수 로드 완료 - GROQ_API_KEY: {groq_api_key[:10]}...", file=sys.stderr)
         
         # 명령행 인수 확인
         if len(sys.argv) != 2:
