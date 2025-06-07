@@ -79,7 +79,17 @@ async function downloadImage(url, filepath) {
     
     const file = fs.createWriteStream(filepath);
     
-    const request = protocol.get(url, (response) => {
+    // 요청 옵션에 헤더 추가
+    const options = new URL(url);
+    options.headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+      'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    };
+    
+    const request = protocol.get(options, (response) => {
       // 리다이렉트 처리
       if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
         file.close();
