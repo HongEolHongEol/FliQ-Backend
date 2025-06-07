@@ -22,6 +22,22 @@ const __dirname = path.dirname(__filename);
 const router = Router();
 const pythonPath = '/usr/bin/python3';
 
+// 가상환경의 Python 인터프리터 경로 설정
+const getVenvPythonPath = () => {
+  const projectRoot = path.dirname(__dirname); // routes 폴더의 상위 디렉토리
+  const venvPythonPath = path.join(projectRoot, 'AI', 'venv', 'bin', 'python3');
+  
+  // 가상환경 Python이 존재하는지 확인
+  if (fs.existsSync(venvPythonPath)) {
+    console.log(`✅ 가상환경 Python 경로 확인: ${venvPythonPath}`);
+    return venvPythonPath;
+  } else {
+    console.warn(`⚠️ 가상환경 Python을 찾을 수 없습니다: ${venvPythonPath}`);
+    console.warn(`⚠️ 시스템 Python3을 사용합니다.`);
+    return 'python3'; // 기본값으로 시스템 Python 사용
+  }
+};
+
 // AWS S3 클라이언트 설정
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
@@ -115,12 +131,30 @@ async function downloadImage(url, filepath) {
   });
 }
 
-// Python OCR 스크립트 실행 함수 (URL 직접 처리 버전)
+// Python OCR 스크립트 실행 함수 (URL 직접 처리 버전) - 수정된 버전
 async function runOCRScriptWithURL(imageUrl) {
   return new Promise((resolve, reject) => {
-    const pythonScript = path.join(__dirname, '../ocr_with_llm.py');
+    const pythonPath = getVenvPythonPath(); // 가상환경 Python 경로 사용
+    const pythonScript = path.join(__dirname, '../AI/ocr_with_llm.py'); // 스크립트 경로 수정
     
-    const pythonProcess = spawn('python3', [pythonScript, imageUrl]);
+    console.log(`🐍 Python 인터프리터: ${pythonPath}`);
+    console.log(`📄 Python 스크립트: ${pythonScript}`);
+    console.log(`🔗 이미지 URL: ${imageUrl}`);
+    
+    // 스크립트 파일 존재 확인
+    if (!fs.existsSync(pythonScript)) {
+      reject(new Error(`Python 스크립트를 찾을 수 없습니다: ${pythonScript}`));
+      return;
+    }
+    
+    const pythonProcess = spawn(pythonPath, [pythonScript, imageUrl], {
+      env: {
+        ...process.env,
+        // Python 가상환경 관련 환경변수 설정
+        VIRTUAL_ENV: path.join(path.dirname(__dirname), 'AI', 'venv'),
+        PATH: `${path.join(path.dirname(__dirname), 'AI', 'venv', 'bin')}:${process.env.PATH}`
+      }
+    });
     
     let stdout = '';
     let stderr = '';
@@ -131,34 +165,67 @@ async function runOCRScriptWithURL(imageUrl) {
     
     pythonProcess.stderr.on('data', (data) => {
       stderr += data.toString();
+      console.log(`🐍 Python stderr: ${data.toString()}`); // 디버깅용
     });
     
     pythonProcess.on('close', (code) => {
+      console.log(`🐍 Python 프로세스 종료 코드: ${code}`);
+      console.log(`📤 Python stdout: ${stdout}`);
+      
       if (code !== 0) {
-        reject(new Error(`OCR 스크립트 실행 실패: ${stderr}`));
+        console.error(`❌ Python 프로세스 오류: ${stderr}`);
+        reject(new Error(`OCR 스크립트 실행 실패 (코드: ${code}): ${stderr}`));
         return;
       }
       
       try {
         const result = JSON.parse(stdout);
+        console.log(`✅ OCR 처리 완료:`, result);
         resolve(result);
       } catch (parseError) {
+        console.error(`❌ JSON 파싱 실패: ${parseError.message}`);
+        console.error(`📤 Raw stdout: ${stdout}`);
         reject(new Error(`OCR 결과 파싱 실패: ${parseError.message}, stdout: ${stdout}`));
       }
     });
     
     pythonProcess.on('error', (error) => {
+      console.error(`❌ Python 프로세스 시작 오류: ${error.message}`);
       reject(new Error(`Python 프로세스 오류: ${error.message}`));
     });
   });
 }
 
-// Python OCR 스크립트 실행 함수 (로컬 파일 처리 버전)
+// Python OCR 스크립트 실행 함수 (로컬 파일 처리 버전) - 수정된 버전
 async function runOCRScriptWithFile(imagePath) {
   return new Promise((resolve, reject) => {
-    const pythonScript = path.join(__dirname, '../ocr_with_llm.py');
+    const pythonPath = getVenvPythonPath(); // 가상환경 Python 경로 사용
+    const pythonScript = path.join(__dirname, '../AI/ocr_with_llm.py'); // 스크립트 경로 수정
     
-    const pythonProcess = spawn('python3', [pythonScript, imagePath]);
+    console.log(`🐍 Python 인터프리터: ${pythonPath}`);
+    console.log(`📄 Python 스크립트: ${pythonScript}`);
+    console.log(`🖼️ 이미지 파일: ${imagePath}`);
+    
+    // 스크립트 파일 존재 확인
+    if (!fs.existsSync(pythonScript)) {
+      reject(new Error(`Python 스크립트를 찾을 수 없습니다: ${pythonScript}`));
+      return;
+    }
+    
+    // 이미지 파일 존재 확인
+    if (!fs.existsSync(imagePath)) {
+      reject(new Error(`이미지 파일을 찾을 수 없습니다: ${imagePath}`));
+      return;
+    }
+    
+    const pythonProcess = spawn(pythonPath, [pythonScript, imagePath], {
+      env: {
+        ...process.env,
+        // Python 가상환경 관련 환경변수 설정
+        VIRTUAL_ENV: path.join(path.dirname(__dirname), 'AI', 'venv'),
+        PATH: `${path.join(path.dirname(__dirname), 'AI', 'venv', 'bin')}:${process.env.PATH}`
+      }
+    });
     
     let stdout = '';
     let stderr = '';
@@ -169,23 +236,32 @@ async function runOCRScriptWithFile(imagePath) {
     
     pythonProcess.stderr.on('data', (data) => {
       stderr += data.toString();
+      console.log(`🐍 Python stderr: ${data.toString()}`); // 디버깅용
     });
     
     pythonProcess.on('close', (code) => {
+      console.log(`🐍 Python 프로세스 종료 코드: ${code}`);
+      console.log(`📤 Python stdout: ${stdout}`);
+      
       if (code !== 0) {
-        reject(new Error(`OCR 스크립트 실행 실패: ${stderr}`));
+        console.error(`❌ Python 프로세스 오류: ${stderr}`);
+        reject(new Error(`OCR 스크립트 실행 실패 (코드: ${code}): ${stderr}`));
         return;
       }
       
       try {
         const result = JSON.parse(stdout);
+        console.log(`✅ OCR 처리 완료:`, result);
         resolve(result);
       } catch (parseError) {
+        console.error(`❌ JSON 파싱 실패: ${parseError.message}`);
+        console.error(`📤 Raw stdout: ${stdout}`);
         reject(new Error(`OCR 결과 파싱 실패: ${parseError.message}, stdout: ${stdout}`));
       }
     });
     
     pythonProcess.on('error', (error) => {
+      console.error(`❌ Python 프로세스 시작 오류: ${error.message}`);
       reject(new Error(`Python 프로세스 오류: ${error.message}`));
     });
   });
@@ -457,11 +533,11 @@ router.delete('/:cardId', async (req, res) => {
   }
 });
 
-// OCR 처리 후 카드 업데이트 (개선된 버전)
+// OCR 처리 후 카드 업데이트 (개선된 버전) - 기존 코드에서 Python 경로만 수정
 router.put('/ocr/:cardId', async (req, res) => {
   const cardId = parseInt(req.params.cardId);
   let tempImagePath = null;
-  const useDirectURL = req.body.useDirectURL || false; // URL 직접 처리 옵션
+  const useDirectURL = req.body.useDirectURL !== false; // URL 직접 처리 옵션
 
   try {
     // 1. 카드 존재 확인 및 이미지 URL 가져오기
@@ -481,16 +557,16 @@ router.put('/ocr/:cardId', async (req, res) => {
       });
     }
 
-    console.log(`Starting OCR for card ${cardId} with image: ${existingCard.card_image_url}`);
+    console.log(`🚀 카드 ${cardId} OCR 처리 시작, 이미지: ${existingCard.card_image_url}`);
 
     let ocrResult;
 
     if (useDirectURL) {
       // 3-A. URL 직접 처리 방식
-      console.log(`Processing OCR directly from URL: ${existingCard.card_image_url}`);
+      console.log(`🔗 URL 직접 처리 방식 사용: ${existingCard.card_image_url}`);
       ocrResult = await runOCRScriptWithURL(existingCard.card_image_url);
     } else {
-      // 3-B. 파일 다운로드 후 처리 방식 (기존 방식)
+      // 3-B. 파일 다운로드 후 처리 방식
       // 임시 디렉토리 생성
       const tempDir = path.join(__dirname, '../temp');
       if (!fs.existsSync(tempDir)) {
@@ -502,11 +578,11 @@ router.put('/ocr/:cardId', async (req, res) => {
       const imageExtension = path.extname(urlParts) || '.jpg';
       tempImagePath = path.join(tempDir, `card_${cardId}_${Date.now()}${imageExtension}`);
       
-      console.log(`Downloading image from: ${existingCard.card_image_url}`);
+      console.log(`📥 이미지 다운로드 중: ${existingCard.card_image_url}`);
       await downloadImage(existingCard.card_image_url, tempImagePath);
 
       // OCR 처리
-      console.log(`Running OCR on local file: ${tempImagePath}`);
+      console.log(`🔍 로컬 파일 OCR 처리: ${tempImagePath}`);
       ocrResult = await runOCRScriptWithFile(tempImagePath);
     }
 
@@ -567,11 +643,11 @@ router.put('/ocr/:cardId', async (req, res) => {
               url: match[1].trim(),
               card_id: cardId
             });
-            console.log(`SNS 링크 추가됨: ${platform} - ${match[1]}`);
+            console.log(`✅ SNS 링크 추가됨: ${platform} - ${match[1]}`);
           }
         }
       } catch (snsError) {
-        console.warn('SNS 링크 처리 중 오류:', snsError);
+        console.warn('⚠️ SNS 링크 처리 중 오류:', snsError);
         // SNS 처리 실패해도 메인 프로세스는 계속 진행
       }
     }
@@ -596,7 +672,7 @@ router.put('/ocr/:cardId', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('OCR 처리 중 오류:', error);
+    console.error('❌ OCR 처리 중 오류:', error);
     
     // 에러 타입별 응답
     if (error.message.includes('download')) {
@@ -629,15 +705,15 @@ router.put('/ocr/:cardId', async (req, res) => {
     if (tempImagePath && fs.existsSync(tempImagePath)) {
       try {
         fs.unlinkSync(tempImagePath);
-        console.log(`Temporary file deleted: ${tempImagePath}`);
+        console.log(`🗑️ 임시 파일 삭제됨: ${tempImagePath}`);
       } catch (cleanupError) {
-        console.warn('임시 파일 삭제 실패:', cleanupError);
+        console.warn('⚠️ 임시 파일 삭제 실패:', cleanupError);
       }
     }
   }
 });
 
-// 새로운 엔드포인트: 이미지 URL로 직접 OCR 처리 (테스트용)
+// 새로운 엔드포인트: 이미지 URL로 직접 OCR 처리 (테스트용) - 수정된 버전
 router.post('/ocr-test', async (req, res) => {
   const { imageUrl } = req.body;
 
@@ -649,7 +725,7 @@ router.post('/ocr-test', async (req, res) => {
   }
 
   try {
-    console.log(`Testing OCR with URL: ${imageUrl}`);
+    console.log(`🧪 OCR 테스트 시작, URL: ${imageUrl}`);
     const ocrResult = await runOCRScriptWithURL(imageUrl);
 
     if (!ocrResult.success) {
@@ -676,9 +752,8 @@ router.post('/ocr-test', async (req, res) => {
       }
     });
 
-
   } catch (error) {
-    console.error('OCR 테스트 중 오류:', error);
+    console.error('❌ OCR 테스트 중 오류:', error);
     res.status(500).json({
       error: 'OCR test failed',
       details: error.message,
